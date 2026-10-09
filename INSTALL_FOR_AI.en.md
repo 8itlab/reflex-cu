@@ -2,7 +2,7 @@
 
 [中文](INSTALL_FOR_AI.md)
 
-This document is written for the coding agent (Claude Code, Codex, ...) that installs reflex-cu on a user's behalf. The user only has to say: "Install this for me, following https://github.com/monstercode2/reflex-cu/blob/main/INSTALL_FOR_AI.en.md."
+This document is written for the coding agent (Claude Code, Codex, ...) that installs reflex-cu on a user's behalf. The user only has to say: "Install this for me, following https://github.com/8itlab/reflex-cu/blob/main/INSTALL_FOR_AI.en.md."
 
 Your job: ask a few questions, install, verify, and tell the user how to start. Every step comes with a check. Do not move on while a check fails.
 
@@ -28,7 +28,7 @@ You cannot find these out yourself. Ask them all at once:
 ## Local Mac
 
 ```
-git clone https://github.com/monstercode2/reflex-cu ~/reflex-cu
+git clone https://github.com/8itlab/reflex-cu ~/reflex-cu
 python3 -m venv ~/.reflexcu/venv
 ~/.reflexcu/venv/bin/pip install -r ~/reflex-cu/requirements-macos.txt
 ```
@@ -51,7 +51,7 @@ The first OCR call takes ten seconds or more while the system initialises; later
 ## Local Windows
 
 ```
-git clone https://github.com/monstercode2/reflex-cu C:\reflexcu
+git clone https://github.com/8itlab/reflex-cu C:\reflexcu
 cd C:\reflexcu
 python -m venv venv
 venv\Scripts\pip install -r requirements-windows.txt
@@ -72,7 +72,7 @@ To control programs running as administrator, you must run as administrator too.
 There are two sides. On the machine to be controlled:
 
 ```
-ssh <alias> "git clone https://github.com/monstercode2/reflex-cu C:\reflexcu"
+ssh <alias> "git clone https://github.com/8itlab/reflex-cu C:\reflexcu"
 ssh <alias> "powershell -ExecutionPolicy Bypass -File C:\reflexcu\scripts\install-windows-daemon.ps1"
 ```
 
@@ -84,7 +84,7 @@ ssh <alias> "powershell -ExecutionPolicy Bypass -File C:\reflexcu\scripts\instal
 The machine you run on needs only the repository and the system Python 3, no dependencies:
 
 ```
-git clone https://github.com/monstercode2/reflex-cu ~/reflex-cu
+git clone https://github.com/8itlab/reflex-cu ~/reflex-cu
 CU_SSH=<alias> CU_DIR='C:\reflexcu' python3 ~/reflex-cu/reflexcu/server.py status
 ```
 

@@ -2,7 +2,7 @@
 
 [English](INSTALL_FOR_AI.en.md)
 
-这份文档是写给替用户安装 reflex-cu 的编码代理（Claude Code、Codex 等）看的。用户只需要对你说一句："按 https://github.com/monstercode2/reflex-cu/blob/main/INSTALL_FOR_AI.md 给我装上。"
+这份文档是写给替用户安装 reflex-cu 的编码代理（Claude Code、Codex 等）看的。用户只需要对你说一句："按 https://github.com/8itlab/reflex-cu/blob/main/INSTALL_FOR_AI.md 给我装上。"
 
 你要做的是：问清几件事，装好，验证，最后告诉用户怎么开始用。每一步都有检验方法，检验没过就不要往下走。
 
@@ -28,7 +28,7 @@
 ## 本机 Mac
 
 ```
-git clone https://github.com/monstercode2/reflex-cu ~/reflex-cu
+git clone https://github.com/8itlab/reflex-cu ~/reflex-cu
 python3 -m venv ~/.reflexcu/venv
 ~/.reflexcu/venv/bin/pip install -r ~/reflex-cu/requirements-macos.txt
 ```
@@ -51,7 +51,7 @@ python3 -m venv ~/.reflexcu/venv
 ## 本机 Windows
 
 ```
-git clone https://github.com/monstercode2/reflex-cu C:\reflexcu
+git clone https://github.com/8itlab/reflex-cu C:\reflexcu
 cd C:\reflexcu
 python -m venv venv
 venv\Scripts\pip install -r requirements-windows.txt
@@ -72,7 +72,7 @@ C:\reflexcu\venv\Scripts\python C:\reflexcu\reflexcu\server.py status
 分两头装。被操作的机器上：
 
 ```
-ssh <别名> "git clone https://github.com/monstercode2/reflex-cu C:\reflexcu"
+ssh <别名> "git clone https://github.com/8itlab/reflex-cu C:\reflexcu"
 ssh <别名> "powershell -ExecutionPolicy Bypass -File C:\reflexcu\scripts\install-windows-daemon.ps1"
 ```
 
@@ -84,7 +84,7 @@ ssh <别名> "powershell -ExecutionPolicy Bypass -File C:\reflexcu\scripts\insta
 你运行的这台机器上只需要仓库代码和系统自带的 Python 3，不用装依赖：
 
 ```
-git clone https://github.com/monstercode2/reflex-cu ~/reflex-cu
+git clone https://github.com/8itlab/reflex-cu ~/reflex-cu
 CU_SSH=<别名> CU_DIR='C:\reflexcu' python3 ~/reflex-cu/reflexcu/server.py status
 ```
 

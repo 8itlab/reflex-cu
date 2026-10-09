@@ -65,7 +65,7 @@
 ### 本机 Mac
 
 ```
-git clone https://github.com/monstercode2/reflex-cu && cd reflex-cu
+git clone https://github.com/8itlab/reflex-cu && cd reflex-cu
 python3 -m venv ~/.reflexcu/venv
 ~/.reflexcu/venv/bin/pip install -r requirements-macos.txt
 claude mcp add reflexcu -s user -- ~/.reflexcu/venv/bin/python "$PWD/reflexcu/server.py"
@@ -76,7 +76,7 @@ claude mcp add reflexcu -s user -- ~/.reflexcu/venv/bin/python "$PWD/reflexcu/se
 ### 本机 Windows
 
 ```
-git clone https://github.com/monstercode2/reflex-cu
+git clone https://github.com/8itlab/reflex-cu
 cd reflex-cu
 python -m venv venv
 venv\Scripts\pip install -r requirements-windows.txt
@@ -90,7 +90,7 @@ claude mcp add reflexcu -s user -- "%CD%\venv\Scripts\python.exe" "%CD%\reflexcu
 在被操作的机器上（需要已经能从你的机器 SSH 过去）：
 
 ```
-git clone https://github.com/monstercode2/reflex-cu C:\reflexcu
+git clone https://github.com/8itlab/reflex-cu C:\reflexcu
 powershell -ExecutionPolicy Bypass -File C:\reflexcu\scripts\install-windows-daemon.ps1
 ```
 
