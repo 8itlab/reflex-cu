@@ -103,6 +103,15 @@ def _cg_windows():
             if w.get('kCGWindowLayer') == 0 and w['kCGWindowBounds']['Width'] > 40 and w['kCGWindowBounds']['Height'] > 40]
 
 
+def overlays(pid):
+    """Windows of an app that has none on the normal layer: Spotlight and other system panels take the
+    keyboard from a floating panel, so without this there is no foreground window at all while they are up."""
+    opts = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
+    return [w for w in Quartz.CGWindowListCopyWindowInfo(opts, 0) or []
+            if w['kCGWindowOwnerPID'] == pid and w.get('kCGWindowLayer', 0) not in (0, 24, 25) and w.get('kCGWindowAlpha', 1) > 0
+            and w['kCGWindowBounds']['Width'] > 40 and w['kCGWindowBounds']['Height'] > 40]
+
+
 def popups(pid):
     """Open menus and popovers of an app: separate windows above the normal layer, invisible to the window's AX tree."""
     opts = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
@@ -110,20 +119,25 @@ def popups(pid):
     for w in Quartz.CGWindowListCopyWindowInfo(opts, 0) or []:
         b, layer = w['kCGWindowBounds'], w.get('kCGWindowLayer', 0)
         # layer 24/25 are the menu bar and its status items
-        if w['kCGWindowOwnerPID'] == pid and layer > 0 and layer not in (24, 25) and b['Width'] > 30 and b['Height'] > 15:
+        if w['kCGWindowOwnerPID'] == pid and layer > 0 and layer not in (24, 25) and b['Width'] > 30 and b['Height'] > 15 \
+                and w.get('kCGWindowAlpha', 1) > 0:
             out.append(view_rect(b['X'], b['Y'], b['Width'], b['Height']))
     return out
 
 
 def list_windows():
     fp, out, seen_front = front_pid(), [], False
-    for w in _cg_windows():  # front to back
+    wins = _cg_windows()
+    panel = overlays(fp) if fp is not None and not any(w['kCGWindowOwnerPID'] == fp for w in wins) else []
+    for w in panel + wins:  # front to back
         b = w['kCGWindowBounds']
         fg = w['kCGWindowOwnerPID'] == fp and not seen_front
         seen_front = seen_front or fg
         out.append({'hwnd': int(w['kCGWindowNumber']), 'title': w.get('kCGWindowName') or '',
                     'exe': w.get('kCGWindowOwnerName') or '', 'pid': int(w['kCGWindowOwnerPID']),
                     'rect': view_rect(b['X'], b['Y'], b['Width'], b['Height']), 'minimized': False, 'foreground': fg})
+        if w in panel:
+            out[-1]['overlay'] = True
     return out
 
 
@@ -169,6 +183,7 @@ def ax_window(info):
             return app, w
     for w in wins:
         r = ax_rect(ax_get(w, 'AXPosition'), ax_get(w, 'AXSize'))
+        r = r and view_rect(*r)
         if r and abs(r[0] - info['rect'][0]) < 3 and abs(r[1] - info['rect'][1]) < 3:
             return app, w
     return app, ax_get(app, 'AXFocusedWindow') or (wins[0] if wins else None)
@@ -342,7 +357,9 @@ ROLES = {'AXButton': '按钮', 'AXCheckBox': '复选框', 'AXPopUpButton': '下�
 CLICKABLE = {'AXButton', 'AXCheckBox', 'AXPopUpButton', 'AXComboBox', 'AXTextField', 'AXTextArea', 'AXSearchField',
              'AXLink', 'AXMenuItem', 'AXMenuBarItem', 'AXMenuButton', 'AXRadioButton', 'AXSlider', 'AXRow', 'AXCell',
              'AXDisclosureTriangle', 'AXIncrementor'}
-ATTRS = ['AXRole', 'AXSubrole', 'AXTitle', 'AXDescription', 'AXValue', 'AXPosition', 'AXSize', 'AXChildren', 'AXEnabled']
+ATTRS = ['AXRole', 'AXSubrole', 'AXTitle', 'AXDescription', 'AXValue', 'AXPosition', 'AXSize', 'AXChildren', 'AXEnabled',
+         'AXPlaceholderValue']
+FIELDS = {'AXTextField', 'AXTextArea', 'AXSearchField', 'AXComboBox'}
 
 
 def ax_rect(pos, size):
@@ -383,8 +400,11 @@ def observe_tree(info, limit=600, budget=3.0):
         rect = view_rect(*r)
         if role != 'AXMenuBarItem' and (rect[2] <= wx0 or rect[0] >= wx1 or rect[3] <= wy0 or rect[1] >= wy1):
             continue
-        text = next((t.strip() for t in (title, desc, value if role in ('AXStaticText', 'AXTextField', 'AXLink', 'AXHeading') else None)
-                     if isinstance(t, str) and t.strip()), '')
+        holds = role in FIELDS or role == 'AXPopUpButton'   # controls whose value is their content, not their name
+        hint = vals[9] if role in FIELDS and isinstance(vals[9], str) else None
+        named = next((t.strip() for t in (title, desc, hint) if isinstance(t, str) and t.strip()), '')
+        shown = value.strip() if isinstance(value, str) and (holds or role in ('AXStaticText', 'AXLink', 'AXHeading')) else ''
+        text = named or shown
         if not text and role not in CLICKABLE:
             continue
         if role in ('AXRow', 'AXCell') and not text:
@@ -393,6 +413,15 @@ def observe_tree(info, limit=600, budget=3.0):
                 'rect': rect, 'src': 'ax', 'clickable': role in CLICKABLE}
         if role in ('AXCheckBox', 'AXSwitch', 'AXRadioButton') and isinstance(vals[4], (int, float)) and not isinstance(vals[4], bool):
             item['state'] = '开' if vals[4] else '关'
+        elif holds and named and sub != 'AXSecureTextField' and isinstance(value, str):
+            # what a field contains, or what a popup button is set to; without it "is the box filled in?" cannot be answered
+            v = ' '.join(value.split())
+            if role == 'AXPopUpButton':
+                item['state'] = '当前：' + v[:40] if v else ''
+            elif v != named:
+                item['state'] = '内容：' + v[:60] if v else '内容为空'
+            if not item['state']:
+                del item['state']
         if enabled is False:
             item['disabled'] = True
         out.append(item)
@@ -433,6 +462,8 @@ def observe_ocr(region=None):
 
 
 def observe_popups(info):
+    if info.get('overlay'):
+        return []   # the panel is the window itself here, and has already been read
     els = []
     vw, vh = view_size()
     for r in popups(info['pid']):

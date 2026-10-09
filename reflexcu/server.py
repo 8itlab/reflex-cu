@@ -207,7 +207,7 @@ def handle(msg):
     if m == 'initialize':
         return {'jsonrpc': '2.0', 'id': i, 'result': {
             'protocolVersion': msg['params'].get('protocolVersion', '2024-11-05'),
-            'capabilities': {'tools': {}}, 'serverInfo': {'name': 'reflexcu', 'version': '0.3.2'},
+            'capabilities': {'tools': {}}, 'serverInfo': {'name': 'reflexcu', 'version': '0.3.3'},
             'instructions': WHERE + HOWTO}}
     if m == 'tools/list':
         return {'jsonrpc': '2.0', 'id': i, 'result': {'tools': tool_list()}}

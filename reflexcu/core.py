@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-VERSION = '0.3.2'
+VERSION = '0.3.3'
 JEV_API = os.environ.get('TYPESAFE_API_URL', 'https://api.typesafe.ai/v1/systemone')
 JEV_MODEL = os.environ.get('TYPESAFE_MODEL', 'jev-latest')
 CONF = Path.home() / '.reflexcu'
@@ -353,9 +353,9 @@ def op_steps(a):
     Each step is one op ({"op": "find", "goal": ..., "click": true}, {"op": "key", ...}, ...).
     Stops at the first step that fails or that Jev is not confident about.
     """
-    done = []
+    done, t0 = [], time.time()
     for i, step in enumerate(a['steps']):
-        op = step.get('op')
+        op, ts = step.get('op'), time.time()
         if op not in OPS or op in ('steps', 'screenshot'):
             done.append({'step': i, 'error': f'unknown op {op!r}'})
             break
@@ -366,7 +366,8 @@ def op_steps(a):
             break
         if op == 'observe' and i < len(a['steps']) - 1:
             res.pop('elements', None)  # only a closing observe is worth its length
-        done.append({'step': i, 'op': op, **res})
+        # when each step began and how long it took: without this a slow batch cannot be diagnosed
+        done.append({'step': i, 'op': op, **res, 'at_ms': int((ts - t0) * 1000), 'ms': int((time.time() - ts) * 1000)})
         stuck = (op == 'find' and step.get('click') and not res.get('clicked')) or \
                 (op in ('wait', 'check') and not res.get('yes') and step.get('required', True))
         if stuck:
@@ -376,7 +377,7 @@ def op_steps(a):
         if i < len(a['steps']) - 1 and (op in ACTING or res.get('clicked')):
             time.sleep(float(step.get('pause', a.get('pause', 0.35))))
     return {'completed': len(done) == len(a['steps']) and not done[-1].get('stopped') and 'error' not in done[-1],
-            'steps': done}
+            'started': round(t0, 3), 'steps': done}
 
 
 ACTING = {'focus', 'click', 'move', 'drag', 'scroll', 'key', 'type'}
