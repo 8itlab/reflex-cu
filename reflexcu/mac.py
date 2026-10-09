@@ -180,8 +180,14 @@ def focus(spec):
     if win is not None:
         AS.AXUIElementPerformAction(win, 'AXRaise')
     AS.AXUIElementSetAttributeValue(app, 'AXFrontmost', True)
-    time.sleep(0.3)
-    return find_window(info['hwnd'])
+    # A window coming from another Space or from behind a full-screen app takes a moment to be on screen.
+    for _ in range(8):
+        time.sleep(0.25)
+        try:
+            return find_window(info['hwnd'])
+        except ValueError:
+            pass
+    return info
 
 
 def idle_seconds():
