@@ -11,14 +11,17 @@ from pathlib import Path
 
 import httpx
 
-VERSION = '0.3.4'
+VERSION = '0.3.5'
 # Where Jev can be reached. All of these speak the same System One protocol (state + typed questions
 # in, probabilities out); only the address, the key and the name of the model differ.
 PROVIDERS = {
     'typesafe': {'url': os.environ.get('TYPESAFE_API_URL', 'https://api.typesafe.ai/v1/systemone'),
                  'model': os.environ.get('TYPESAFE_MODEL', 'jev-latest'), 'env': 'TYPESAFE_API_KEY', 'file': 'typesafe_key'},
+    # The extra headers are OpenRouter's app attribution: they name this project, nothing about the user.
     'openrouter': {'url': 'https://openrouter.ai/api/v1/systemone', 'model': '~typesafe/jev-latest',
-                   'env': 'OPENROUTER_API_KEY', 'file': 'openrouter_key'},
+                   'env': 'OPENROUTER_API_KEY', 'file': 'openrouter_key',
+                   'headers': {'HTTP-Referer': 'https://github.com/8itlab/reflex-cu', 'X-OpenRouter-Title': 'reflex-cu',
+                               'X-OpenRouter-Categories': 'personal-agent'}},
     'commandcode': {'url': 'https://api.commandcode.ai/provider/v1/systemone', 'model': 'typesafe/jev',
                     'env': 'COMMANDCODE_API_KEY', 'file': 'commandcode_key'},
 }
@@ -149,7 +152,8 @@ def jev(state, questions):
             f"{n} ({q['env']}, or the file {CONF / q['file']})" for n, q in PROVIDERS.items()))
     p = PROVIDERS[name]
     # CU_JEV_URL / CU_JEV_MODEL point the chosen key at any other gateway that speaks the same protocol
-    r = _http.post(setting('CU_JEV_URL', 'jev_url') or p['url'], headers={'Authorization': 'Bearer ' + key},
+    extra = {} if os.environ.get('CU_NO_ATTRIBUTION') else p.get('headers', {})
+    r = _http.post(setting('CU_JEV_URL', 'jev_url') or p['url'], headers={'Authorization': 'Bearer ' + key, **extra},
                    json={'model': setting('CU_JEV_MODEL', 'jev_model') or p['model'], 'state': state, 'questions': questions})
     if r.status_code == 451:
         raise RuntimeError(f"the Jev API at {name} refuses requests from this network (HTTP 451); put a proxy URL in CU_PROXY "

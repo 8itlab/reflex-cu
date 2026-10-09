@@ -1,0 +1,16 @@
+# reflex-cu
+
+> Open-source computer use MCP server for Claude Code, Codex and other AI agents. It controls macOS and Windows desktops, and a remote Windows machine over SSH, by reading the accessibility / UI Automation tree instead of taking a screenshot at every step. Jev (TypeSafe's System One decision model) answers the small decisions between steps: which element, did it work, has it loaded. MIT licensed, Python 3.10+.
+
+Tools: status, screenshot, windows, focus, observe, click, move, drag, scroll, key, type, find, check, wait, steps. The three Jev tools (find, check, wait) need the user's own key from TypeSafe, OpenRouter or Command Code; everything else works without one.
+
+## Docs
+
+- [README (English)](https://github.com/8itlab/reflex-cu/blob/main/README.en.md): what it does, tools, installation, configuration, measurements, FAQ
+- [README (中文)](https://github.com/8itlab/reflex-cu/blob/main/README.md): 中文说明
+- [Installation guide for AI agents](https://github.com/8itlab/reflex-cu/blob/main/INSTALL_FOR_AI.en.md): step-by-step instructions written for the coding agent that installs it on a user's behalf
+- [给 AI 的安装说明](https://github.com/8itlab/reflex-cu/blob/main/INSTALL_FOR_AI.md)
+
+## Install in one sentence
+
+Tell your coding agent: "Install reflex-cu for me, following https://github.com/8itlab/reflex-cu/blob/main/INSTALL_FOR_AI.en.md"

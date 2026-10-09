@@ -1,10 +1,20 @@
 [project]
 name = "reflexcu"
-version = "0.3.4"
-description = "Desktop control (computer use) MCP server for coding agents: local macOS, local Windows, or a remote Windows machine over SSH, with Jev as the fast judge between steps."
+version = "0.3.5"
+description = "Computer use MCP server for Claude Code, Codex and other AI agents: controls macOS and Windows desktops (also a remote Windows machine over SSH) by reading the UI tree instead of screenshots, with Jev as the fast judge."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
+keywords = ["computer-use", "mcp", "mcp-server", "model-context-protocol", "claude-code", "codex", "jev", "typesafe", "openrouter",
+            "desktop-automation", "gui-automation", "ui-automation", "accessibility", "windows", "macos", "ai-agents"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = [
     "httpx>=0.26",
     "pillow",
@@ -19,6 +29,11 @@ dependencies = [
     "pyobjc-framework-ApplicationServices; sys_platform == 'darwin'",
     "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/8itlab/reflex-cu"
+Documentation = "https://github.com/8itlab/reflex-cu/blob/main/README.en.md"
+Issues = "https://github.com/8itlab/reflex-cu/issues"
 
 [project.scripts]
 reflexcu-mcp = "reflexcu.server:main"

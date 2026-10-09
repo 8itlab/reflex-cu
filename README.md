@@ -1,6 +1,8 @@
 # reflex-cu
 
-给编码代理（Claude Code、Codex 等）用的桌面操作（computer use）MCP 服务。
+> **reflex-cu** is an open-source **computer use** MCP server for Claude Code, Codex and other AI agents. It controls macOS and Windows desktops, including a remote Windows machine over SSH, by reading the accessibility / UI Automation tree instead of taking a screenshot at every step, and uses **Jev** (TypeSafe's System One decision model; a TypeSafe, OpenRouter or Command Code key works) as a fast judge. → [English README](README.en.md)
+
+给编码代理（Claude Code、Codex 等）用的桌面操作（computer use）MCP 服务：让 AI 自己操作 Mac 和 Windows 的桌面，也能通过 SSH 操作另一台 Windows。
 
 名字里的 reflex 是"反射"：除了常规的截图、点击、打字，它把"点哪个""成功了没""加载完没"这类不需要思考的高频小判断，交给一个反射式的快速判断模型去做，代理不用每一步都看截图。目前接的判断模型是 [Jev](https://typesafe.ai)（TypeSafe 的 System One 模型，一次约 0.3 秒）。
 
@@ -157,7 +159,8 @@ CU_SHOT=shot.jpg python reflexcu/server.py screenshot
 
 - 远程服务只监听 `127.0.0.1`，每个请求都要带 `token.txt` 里的令牌，对外只走 SSH 隧道。不要把端口暴露到网络上。
 - 远程服务以最高权限运行，这样才能操作管理员窗口。能访问那个端口和令牌的人就能控制那台机器。
-- `find`、`check`、`wait` 会把屏幕上的文字发给 TypeSafe 的 Jev 接口（用 OpenRouter 或 Command Code 的密钥时经由它们转发）。屏幕上有敏感内容时不要用这三个工具，或者不配置密钥。
+- `find`、`check`、`wait` 会把屏幕上的文字发给 TypeSafe 的 Jev 接口（用 OpenRouter 或 Command Code 的密钥时经由它们转发）。
+- 用 OpenRouter 的密钥时，请求会带上本项目的名称和仓库地址（OpenRouter 的应用归属标头，用于它公开的应用榜单），不含你的任何信息；设 `CU_NO_ATTRIBUTION=1` 可以关掉。屏幕上有敏感内容时不要用这三个工具，或者不配置密钥。
 - 输入是发给前台窗口的。先切对窗口再打字，否则按键会进别的程序；有人正在用那台机器时，`status` 的 `idle_seconds` 会很小。
 - 带内核反作弊的在线游戏可能把模拟输入当作外挂，请自行判断，不要在这类游戏里使用。
 
@@ -168,6 +171,31 @@ CU_SHOT=shot.jpg python reflexcu/server.py screenshot
 - Mac 上打开的菜单靠文字识别读取，没有禁用状态；Windows 上经典菜单和归属于该窗口的弹出层走 UI Automation。
 - 远程模式目前只有 Windows 的安装脚本。Mac 后端也能跑 `daemon.py`，但没有测过。
 - 游戏里的相对移动（转镜头）没有系统测试过。
+
+## 实测数据
+
+都是同一个代理（Claude Opus 5.5）、同一句任务描述，只换工具：一组用 reflex-cu 的全部工具，另一组把同一个服务限制成只有截图、点击、按键（`CU_TOOLS=screenshot`）。对照组是本项目自己的截图模式，不是别家产品。每格只跑了 2 次，数字只能看量级。
+
+| 任务 | reflex-cu 全部工具 | 只用截图和点击 |
+|---|---|---|
+| Mac，只说一句话："打开 ChatGPT 应用" | 8 / 9 秒，4 次调用 | 18 / 30 秒，7 / 12 次调用 |
+| Mac，只说一句话："打开计算器，算出 1234 乘以 56" | 23 / 22 秒，5–6 次调用 | 35 / 38 秒，21 次调用 |
+| Mac，只说一句话："打开系统设置，查 macOS 版本号" | 25 / 24 秒，4 次调用 | 31 / 26 秒，11–13 次调用 |
+| 远程 Windows，在"设置"里连改五项 | 61 / 88 秒，11–15 次调用，约 $0.27 | 54 / 72 秒，28–38 次调用，$0.40–0.56 |
+
+短任务上更快，调用次数少一半以上；步骤很多的长任务上速度没有优势，但花费更低。
+
+## 常见问题
+
+**reflex-cu 是什么？** 一个标准的 stdio MCP 服务，给 AI 代理提供"看屏幕、动鼠标键盘"的工具，也就是通常说的 computer use。它装在你自己的机器上，由你已经在用的代理（Claude Code、Codex、ChatGPT 桌面应用里的 Codex）来调用。
+
+**和模型自带的 computer use 有什么不同？** 常见做法是每一步截一张图交给大模型看。reflex-cu 优先直接读出界面上的控件（名称、状态、坐标），只有图标、游戏画面这类没有文字的内容才截图；"点哪个""成功了没"这类小判断交给 Jev。它还能通过 SSH 操作另一台 Windows 的真实桌面。
+
+**没有 Jev 密钥能用吗？** 能。截图、读界面、鼠标、键盘都不需要密钥，只有 `find`、`check`、`wait` 三个工具需要。
+
+**Jev 的密钥从哪来？** TypeSafe 官方、OpenRouter、Command Code 三选一，见上文"Jev 密钥"。在访问不了 TypeSafe 的网络里，可以用 OpenRouter 的密钥。
+
+**支持哪些系统和客户端？** 被操作的机器：macOS、Windows；远程模式目前只支持操作 Windows。客户端：在 Claude Code 和 Codex（含 ChatGPT 桌面应用）里实测过，其他支持 stdio MCP 的客户端按同样方式注册。
 
 ## 代码结构
 

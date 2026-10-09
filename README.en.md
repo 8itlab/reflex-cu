@@ -2,7 +2,7 @@
 
 [中文](README.md)
 
-A desktop-control (computer use) MCP server for coding agents such as Claude Code and Codex.
+**reflex-cu** is an open-source **computer use** MCP server for coding agents such as Claude Code and Codex. It lets an AI agent operate a macOS or Windows desktop, or a remote Windows machine over SSH, by reading the accessibility / UI Automation tree instead of taking a screenshot at every step.
 
 The "reflex" in the name is the idea: besides the usual screenshots, clicks and typing, the small, frequent decisions that need no deliberation ("which element?", "did that work?", "has it finished loading?") go to a fast, reflex-like judge model, so the agent no longer has to look at a screenshot after every step. The judge currently wired in is [Jev](https://typesafe.ai), TypeSafe's System One model, which answers in about 0.3 seconds.
 
@@ -159,7 +159,8 @@ This tool can see the screen and control the mouse and keyboard. Treat it accord
 
 - The remote daemon listens on `127.0.0.1` only, every request must carry the token from `token.txt`, and the only way in from outside is the SSH tunnel. Do not expose the port to a network.
 - The remote daemon runs with the highest privileges so that it can operate administrator windows. Anyone who can reach that port with the token controls the machine.
-- `find`, `check` and `wait` send the text on screen to TypeSafe's Jev API (through OpenRouter or Command Code when one of their keys is used). Do not use them while sensitive content is on screen, or leave the key unconfigured.
+- `find`, `check` and `wait` send the text on screen to TypeSafe's Jev API (through OpenRouter or Command Code when one of their keys is used).
+- With an OpenRouter key, requests carry this project's name and repository URL (OpenRouter's app attribution headers, used for its public app rankings) and nothing about you. Set `CU_NO_ATTRIBUTION=1` to turn that off. Do not use them while sensitive content is on screen, or leave the key unconfigured.
 - Input goes to the foreground window. Focus the right window before typing, or the keystrokes land in another program. When someone is using the machine, `idle_seconds` in `status` is small.
 - Online games with kernel anti-cheat may treat synthetic input as cheating. Use your own judgment and do not use this tool in such games.
 
@@ -170,6 +171,31 @@ This tool can see the screen and control the mouse and keyboard. Treat it accord
 - On macOS, open menus are read by OCR and carry no disabled state. On Windows, classic menus and popups owned by the window are read through UI Automation.
 - Remote mode has an install script for Windows only. The macOS backend can run `daemon.py` too, but that is untested.
 - Relative mouse motion in games (turning the camera) has not been tested systematically.
+
+## Measurements
+
+Same agent (Claude Opus 5.5) and same task sentence each time; only the tools differ. One arm has all of reflex-cu's tools, the other is the same server restricted to screenshots, clicks and keys (`CU_TOOLS=screenshot`). The baseline is this project's own screenshot mode, not another product. Two runs per cell: read these as orders of magnitude.
+
+| Task | All reflex-cu tools | Screenshots and clicks only |
+|---|---|---|
+| macOS, one sentence: "open the ChatGPT app" | 8 / 9 s, 4 calls | 18 / 30 s, 7 / 12 calls |
+| macOS, one sentence: "open Calculator and work out 1234 times 56" | 23 / 22 s, 5–6 calls | 35 / 38 s, 21 calls |
+| macOS, one sentence: "open System Settings and tell me the macOS version" | 25 / 24 s, 4 calls | 31 / 26 s, 11–13 calls |
+| Remote Windows, five changes in a row in Settings | 61 / 88 s, 11–15 calls, about $0.27 | 54 / 72 s, 28–38 calls, $0.40–0.56 |
+
+Faster on short tasks, with less than half the tool calls. On a long task with many steps there is no speed advantage, but the cost is lower.
+
+## FAQ
+
+**What is reflex-cu?** A standard stdio MCP server that gives an AI agent the tools to see the screen and use the mouse and keyboard, what is usually called computer use. It runs on your own machine and is called by the agent you already use (Claude Code, Codex, Codex inside the ChatGPT desktop app).
+
+**How is it different from a model's built-in computer use?** The usual loop sends a screenshot to a large model at every step. reflex-cu reads the controls on screen directly (names, state, coordinates) and falls back to screenshots only for content without text, such as icons or game scenes. Small decisions like "which element?" and "did that work?" go to Jev. It can also operate the real desktop of another Windows machine over SSH.
+
+**Does it work without a Jev key?** Yes. Screenshots, reading the UI, mouse and keyboard need no key. Only `find`, `check` and `wait` do.
+
+**Where does a Jev key come from?** TypeSafe directly, OpenRouter, or Command Code: see "Jev API key" above. On a network that cannot reach TypeSafe, an OpenRouter key is an alternative.
+
+**Which systems and clients are supported?** Controlled machine: macOS or Windows; remote mode currently controls Windows only. Clients: tested in Claude Code and Codex (including the ChatGPT desktop app); other stdio MCP clients register it the same way.
 
 ## Layout
 
