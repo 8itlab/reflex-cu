@@ -12,7 +12,7 @@ You cannot find these out yourself. Ask them all at once:
 
 1. **Which machine should be controlled?** The one you are running on (local mode), or another Windows machine (remote mode). For remote mode, ask for the SSH alias and confirm that `ssh <alias> hostname` works.
 2. **Which client will use it?** Claude Code, Codex (the ChatGPT desktop app), or both.
-3. **Do they have a Jev key?** `find`, `check` and `wait` need a key the user obtains from TypeSafe themselves. Installing without one is fine; the other tools still work.
+3. **Do they have a Jev key?** `find`, `check` and `wait` need the user's own key: a TypeSafe key, an OpenRouter key (no TypeSafe account needed) or a Command Code key. One is enough. Installing without one is fine; the other tools still work.
 4. **Is a proxy needed to reach Jev?** If the user's network cannot reach the Jev API, ask for the proxy URL (for example `http://127.0.0.1:7890`). If unsure, skip it; the verification step will tell you.
 
 ## Rules you must follow
@@ -44,7 +44,7 @@ Check:
 It should print JSON. Look at three fields:
 
 - `accessibility` and `screen_recording` should both be `true`. If one is `false`, ask the user to open System Settings → Privacy & Security and grant that permission to **the app that launches you** (Terminal, an IDE, or the ChatGPT app), then restart that app and check again.
-- `jev` is `true` when a key is in place.
+- `jev` is `true` when a key is in place, and `jev_provider` names the source in use (`typesafe`, `openrouter` or `commandcode`).
 
 The first OCR call takes ten seconds or more while the system initialises; later calls take under a second.
 
@@ -96,10 +96,12 @@ Both live on **the machine being controlled**. Prefer the files; environment var
 
 | What | File | Environment variable |
 |---|---|---|
-| Key | `~/.reflexcu/typesafe_key` | `TYPESAFE_API_KEY` |
+| TypeSafe key | `~/.reflexcu/typesafe_key` | `TYPESAFE_API_KEY` |
+| or OpenRouter key | `~/.reflexcu/openrouter_key` | `OPENROUTER_API_KEY` |
+| or Command Code key | `~/.reflexcu/commandcode_key` | `COMMANDCODE_API_KEY` |
 | Proxy (optional) | `~/.reflexcu/proxy` | `CU_PROXY` |
 
-On Windows `~` is `%USERPROFILE%`. The file holds the bare value, without quotes.
+On Windows `~` is `%USERPROFILE%`. The file holds the bare value, without quotes. One kind of key is enough; with more than one, the first in the table's order is used, and writing `typesafe`, `openrouter` or `commandcode` into `~/.reflexcu/jev_provider` picks one.
 
 Check (read-only, sends no input):
 
@@ -108,7 +110,8 @@ python reflexcu/server.py check '{"question":"Is there readable text on the scre
 ```
 
 - `"yes": true` means it works.
-- `HTTP 451`: the network is refused by the Jev API; configure a proxy.
+- `HTTP 451`: the network is refused by TypeSafe's API; configure a proxy, or use a key from another source (OpenRouter, for example).
+- `rejected the Jev key`: the key is wrong. `no credit left`: that account has run out of credit.
 - `no Jev key`: the key is not where it should be.
 - After changing the key or proxy file in remote mode, rerun the install script to restart the daemon.
 
@@ -167,7 +170,7 @@ Read-only first, input second.
 
 - Which mode was installed, what the registered server is called, and that a new session or an app restart is needed before the tools show up.
 - Whether Jev works; if not, which three tools are unavailable.
-- That this tool can see the screen and control the mouse and keyboard, and that `find`, `check` and `wait` send on-screen text to TypeSafe.
+- That this tool can see the screen and control the mouse and keyboard, and that `find`, `check` and `wait` send on-screen text to TypeSafe (through OpenRouter or Command Code when one of their keys is used).
 - Any step you could not verify, stated as it is.
 
 ## Using it well afterwards

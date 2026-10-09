@@ -55,14 +55,21 @@ Python 3.10 or later.
 
 ### Jev API key (bring your own)
 
-This project does not ship with, or proxy, any Jev quota. `find`, `check` and `wait` use an API key you obtain from TypeSafe yourself, billed to your own TypeSafe account. Running without a key is fine: those three tools return an error and the rest are unaffected.
+This project does not ship with, or proxy, any Jev quota. `find`, `check` and `wait` use your own key, billed to your own account. Running without a key is fine: those three tools return an error and the rest are unaffected.
 
-The key lives on **the machine being controlled**, in either of:
+The key can come from any one of three places:
 
-- the environment variable `TYPESAFE_API_KEY`
-- the file `~/.reflexcu/typesafe_key` (`%USERPROFILE%\.reflexcu\typesafe_key` on Windows), containing only the key
+| Source | Environment variable | Or a file |
+|---|---|---|
+| [TypeSafe](https://typesafe.ai) directly | `TYPESAFE_API_KEY` | `~/.reflexcu/typesafe_key` |
+| [OpenRouter](https://openrouter.ai/typesafe/jev-1.13) (no TypeSafe account needed) | `OPENROUTER_API_KEY` | `~/.reflexcu/openrouter_key` |
+| [Command Code](https://commandcode.ai)'s Provider API | `COMMANDCODE_API_KEY` | `~/.reflexcu/commandcode_key` |
 
-If your network cannot reach the Jev API (HTTP 451), also configure a proxy: the environment variable `CU_PROXY`, or the file `~/.reflexcu/proxy`, with a value like `http://127.0.0.1:7890`. A remote daemon started by the Windows task scheduler does not see environment variables set after the last logon; use the file in that case.
+The key lives on **the machine being controlled**; the file contains only the key (`~` is `%USERPROFILE%` on Windows). With more than one configured, the first in the table's order is used; to choose, set `CU_JEV_PROVIDER` (or the file `~/.reflexcu/jev_provider`) to `typesafe`, `openrouter` or `commandcode`. `jev_provider` in `status` shows which one is active.
+
+Any other gateway that speaks the same protocol (System One) works too: override the address and model name with `CU_JEV_URL` and `CU_JEV_MODEL` (or the files `~/.reflexcu/jev_url` and `~/.reflexcu/jev_model`); the key is still supplied as above.
+
+If your network cannot reach TypeSafe's API (HTTP 451), switch to another source (OpenRouter, for example), or configure a proxy: the environment variable `CU_PROXY`, or the file `~/.reflexcu/proxy`, with a value like `http://127.0.0.1:7890`. A remote daemon started by the Windows task scheduler does not see environment variables set after the last logon; use the file in that case.
 
 ### Local Mac
 
@@ -127,7 +134,11 @@ The read-only tools (`status`, `screenshot`, `windows`, `observe`, `check`, `wai
 | `CU_LPORT` / `CU_RPORT` | MCP server | Local end of the tunnel (default 18765) and the daemon port on the remote (default 8765) |
 | `CU_PORT` | Daemon | Listening port (default 8765) |
 | `CU_VIEW_W` | Backend | Width of the coordinate space (default 1600) |
-| `TYPESAFE_API_KEY` | Backend | Your own Jev key; may also be stored in `~/.reflexcu/typesafe_key` |
+| `TYPESAFE_API_KEY` | Backend | Your own TypeSafe key; may also be stored in `~/.reflexcu/typesafe_key` |
+| `OPENROUTER_API_KEY` | Backend | The key for reaching Jev through OpenRouter; may also be stored in `~/.reflexcu/openrouter_key` |
+| `COMMANDCODE_API_KEY` | Backend | The key for reaching Jev through Command Code; may also be stored in `~/.reflexcu/commandcode_key` |
+| `CU_JEV_PROVIDER` | Backend | `typesafe`, `openrouter` or `commandcode`; unset means the first one, in that order, that has a key. May also be stored in `~/.reflexcu/jev_provider` |
+| `CU_JEV_URL` / `CU_JEV_MODEL` | Backend | Override the endpoint and the model name, for other compatible gateways; may also be stored in `~/.reflexcu/jev_url` and `~/.reflexcu/jev_model` |
 | `CU_PROXY` | Backend | Proxy for reaching Jev, e.g. `http://127.0.0.1:7890`; may also be stored in `~/.reflexcu/proxy`. System proxies are not picked up automatically |
 
 ## Command-line debugging
@@ -148,7 +159,7 @@ This tool can see the screen and control the mouse and keyboard. Treat it accord
 
 - The remote daemon listens on `127.0.0.1` only, every request must carry the token from `token.txt`, and the only way in from outside is the SSH tunnel. Do not expose the port to a network.
 - The remote daemon runs with the highest privileges so that it can operate administrator windows. Anyone who can reach that port with the token controls the machine.
-- `find`, `check` and `wait` send the text on screen to TypeSafe's Jev API. Do not use them while sensitive content is on screen, or leave the key unconfigured.
+- `find`, `check` and `wait` send the text on screen to TypeSafe's Jev API (through OpenRouter or Command Code when one of their keys is used). Do not use them while sensitive content is on screen, or leave the key unconfigured.
 - Input goes to the foreground window. Focus the right window before typing, or the keystrokes land in another program. When someone is using the machine, `idle_seconds` in `status` is small.
 - Online games with kernel anti-cheat may treat synthetic input as cheating. Use your own judgment and do not use this tool in such games.
 

@@ -53,14 +53,21 @@
 
 ### Jev 密钥（需自备）
 
-本项目不附带、也不代理任何 Jev 额度。`find`、`check`、`wait` 三个工具要用你自己在 TypeSafe 申请的 API 密钥，费用由你的 TypeSafe 账户承担。不配置密钥也能用，只是这三个工具会报错，其余工具不受影响。
+本项目不附带、也不代理任何 Jev 额度。`find`、`check`、`wait` 三个工具要用你自己的密钥，费用由你自己的账户承担。不配置密钥也能用，只是这三个工具会报错，其余工具不受影响。
 
-密钥放在**被操作的那台机器**上，二选一：
+密钥有三种来源，任选其一：
 
-- 环境变量 `TYPESAFE_API_KEY`
-- 文件 `~/.reflexcu/typesafe_key`（Windows 上是 `%USERPROFILE%\.reflexcu\typesafe_key`），内容只有密钥本身
+| 来源 | 环境变量 | 或者写进文件 |
+|---|---|---|
+| [TypeSafe](https://typesafe.ai) 官方 | `TYPESAFE_API_KEY` | `~/.reflexcu/typesafe_key` |
+| [OpenRouter](https://openrouter.ai/typesafe/jev-1.13)（不需要 TypeSafe 账号） | `OPENROUTER_API_KEY` | `~/.reflexcu/openrouter_key` |
+| [Command Code](https://commandcode.ai) 的 Provider API | `COMMANDCODE_API_KEY` | `~/.reflexcu/commandcode_key` |
 
-如果所在网络访问不了 Jev 接口（返回 HTTP 451），再配一个代理：环境变量 `CU_PROXY`，或文件 `~/.reflexcu/proxy`，内容形如 `http://127.0.0.1:7890`。Windows 上由计划任务启动的远程服务读不到登录之后才设置的环境变量，这种情况用文件。
+密钥放在**被操作的那台机器**上，文件里只写密钥本身（Windows 上 `~` 是 `%USERPROFILE%`）。配了不止一种时按表里的顺序取第一个；要指定就把 `CU_JEV_PROVIDER`（或文件 `~/.reflexcu/jev_provider`）设成 `typesafe`、`openrouter` 或 `commandcode`。`status` 的 `jev_provider` 会显示当前用的是哪一个。
+
+别的兼容同一协议（System One）的网关也能接：用 `CU_JEV_URL` 和 `CU_JEV_MODEL`（或文件 `~/.reflexcu/jev_url`、`~/.reflexcu/jev_model`）覆盖地址和模型名，密钥仍按上面的方式放。
+
+如果所在网络访问不了 TypeSafe 的接口（返回 HTTP 451），可以换一种来源（比如 OpenRouter），或者配一个代理：环境变量 `CU_PROXY`，或文件 `~/.reflexcu/proxy`，内容形如 `http://127.0.0.1:7890`。Windows 上由计划任务启动的远程服务读不到登录之后才设置的环境变量，这种情况用文件。
 
 ### 本机 Mac
 
@@ -125,7 +132,11 @@ codex mcp add winbox --env CU_SSH=<ssh 别名> --env 'CU_DIR=C:\reflexcu' -- pyt
 | `CU_LPORT` / `CU_RPORT` | MCP 服务 | 隧道的本地端口（默认 18765）和远程服务端口（默认 8765） |
 | `CU_PORT` | 远程服务 | 监听端口（默认 8765） |
 | `CU_VIEW_W` | 后端 | 坐标系宽度（默认 1600） |
-| `TYPESAFE_API_KEY` | 后端 | 你自己的 Jev 密钥；也可以写在 `~/.reflexcu/typesafe_key` |
+| `TYPESAFE_API_KEY` | 后端 | 你自己的 TypeSafe 密钥；也可以写在 `~/.reflexcu/typesafe_key` |
+| `OPENROUTER_API_KEY` | 后端 | 通过 OpenRouter 用 Jev 时的密钥；也可以写在 `~/.reflexcu/openrouter_key` |
+| `COMMANDCODE_API_KEY` | 后端 | 通过 Command Code 用 Jev 时的密钥；也可以写在 `~/.reflexcu/commandcode_key` |
+| `CU_JEV_PROVIDER` | 后端 | `typesafe`、`openrouter` 或 `commandcode`；不设时按这个顺序用第一个配了密钥的。也可以写在 `~/.reflexcu/jev_provider` |
+| `CU_JEV_URL` / `CU_JEV_MODEL` | 后端 | 覆盖接口地址和模型名，用来接别的兼容网关；也可以写在 `~/.reflexcu/jev_url`、`~/.reflexcu/jev_model` |
 | `CU_PROXY` | 后端 | 访问 Jev 用的代理，例如 `http://127.0.0.1:7890`；也可以写在 `~/.reflexcu/proxy`。系统代理不会被自动使用 |
 
 ## 命令行调试
@@ -146,7 +157,7 @@ CU_SHOT=shot.jpg python reflexcu/server.py screenshot
 
 - 远程服务只监听 `127.0.0.1`，每个请求都要带 `token.txt` 里的令牌，对外只走 SSH 隧道。不要把端口暴露到网络上。
 - 远程服务以最高权限运行，这样才能操作管理员窗口。能访问那个端口和令牌的人就能控制那台机器。
-- `find`、`check`、`wait` 会把屏幕上的文字发给 TypeSafe 的 Jev 接口。屏幕上有敏感内容时不要用这三个工具，或者不配置密钥。
+- `find`、`check`、`wait` 会把屏幕上的文字发给 TypeSafe 的 Jev 接口（用 OpenRouter 或 Command Code 的密钥时经由它们转发）。屏幕上有敏感内容时不要用这三个工具，或者不配置密钥。
 - 输入是发给前台窗口的。先切对窗口再打字，否则按键会进别的程序；有人正在用那台机器时，`status` 的 `idle_seconds` 会很小。
 - 带内核反作弊的在线游戏可能把模拟输入当作外挂，请自行判断，不要在这类游戏里使用。
 

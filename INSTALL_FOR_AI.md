@@ -12,7 +12,7 @@
 
 1. **要操作哪台机器？** 你正在运行的这台（本机模式），还是另一台 Windows（远程模式）。远程模式要问 SSH 别名，并先确认 `ssh <别名> hostname` 能通。
 2. **在哪个客户端里用？** Claude Code、Codex（ChatGPT 桌面应用），或者两个都要。
-3. **有没有 Jev 密钥？** `find`、`check`、`wait` 三个工具需要用户自己在 TypeSafe 申请的密钥。没有也能装，其余工具照常可用。
+3. **有没有 Jev 密钥？** `find`、`check`、`wait` 三个工具需要用户自己的密钥：TypeSafe 官方的密钥、OpenRouter 的密钥（不需要 TypeSafe 账号），或者 Command Code 的密钥，有一个就行。没有也能装，其余工具照常可用。
 4. **访问 Jev 需不需要代理？** 如果用户所在网络访问不了 Jev 接口，问代理地址（例如 `http://127.0.0.1:7890`）。不确定就先不配，验证那一步会告诉你。
 
 ## 必须遵守的规则
@@ -44,7 +44,7 @@ python3 -m venv ~/.reflexcu/venv
 应返回一段 JSON。重点看三项：
 
 - `accessibility` 和 `screen_recording` 都应为 `true`。哪一项是 `false`，就请用户到"系统设置 → 隐私与安全性"里，把对应权限开给**启动你的那个应用**（终端、IDE，或者 ChatGPT 应用），开完后重启那个应用再验。
-- `jev` 为 `true` 表示密钥已就位。
+- `jev` 为 `true` 表示密钥已就位，`jev_provider` 是当前用的来源（`typesafe`、`openrouter` 或 `commandcode`）。
 
 第一次调用文字识别会慢十几秒，是系统的一次性初始化，之后不到一秒。
 
@@ -96,10 +96,12 @@ CU_SSH=<别名> CU_DIR='C:\reflexcu' python3 ~/reflex-cu/reflexcu/server.py stat
 
 | 内容 | 文件 | 环境变量 |
 |---|---|---|
-| 密钥 | `~/.reflexcu/typesafe_key` | `TYPESAFE_API_KEY` |
+| TypeSafe 的密钥 | `~/.reflexcu/typesafe_key` | `TYPESAFE_API_KEY` |
+| 或 OpenRouter 的密钥 | `~/.reflexcu/openrouter_key` | `OPENROUTER_API_KEY` |
+| 或 Command Code 的密钥 | `~/.reflexcu/commandcode_key` | `COMMANDCODE_API_KEY` |
 | 代理（可选） | `~/.reflexcu/proxy` | `CU_PROXY` |
 
-Windows 上 `~` 是 `%USERPROFILE%`。文件里只写值本身，不要加引号。
+Windows 上 `~` 是 `%USERPROFILE%`。文件里只写值本身，不要加引号。三种密钥配一种就够；配了不止一种时按表里的顺序取第一个，要指定就在 `~/.reflexcu/jev_provider` 里写 `typesafe`、`openrouter` 或 `commandcode`。
 
 检验（只读，不发任何输入）：
 
@@ -108,7 +110,8 @@ python reflexcu/server.py check '{"question":"屏幕上是否有可以阅读的�
 ```
 
 - 返回 `"yes": true` 即正常。
-- 报 `HTTP 451`：所在网络被 Jev 接口拒绝，需要配代理。
+- 报 `HTTP 451`：所在网络被 TypeSafe 的接口拒绝，需要配代理，或者改用别的来源（比如 OpenRouter）的密钥。
+- 报 `rejected the Jev key`：密钥不对；报 `no credit left`：那个账户没有余额了。
 - 报 `no Jev key`：密钥没放对位置。
 - 改了密钥或代理文件后，远程模式要重跑一次安装脚本来重启服务。
 
@@ -167,7 +170,7 @@ codex mcp add winbox --env CU_SSH=<别名> --env 'CU_DIR=C:\reflexcu' -- python3
 
 - 装的是哪种模式、注册的工具名叫什么、需要新开会话或重启应用才能看到工具。
 - Jev 是否可用；不可用时哪三个工具用不了。
-- 这个工具能看到屏幕并控制鼠标键盘，`find`、`check`、`wait` 会把屏幕上的文字发给 TypeSafe。
+- 这个工具能看到屏幕并控制鼠标键盘，`find`、`check`、`wait` 会把屏幕上的文字发给 TypeSafe（用 OpenRouter 或 Command Code 的密钥时经由它们转发）。
 - 哪些步骤你没能验证，原样说明。
 
 ## 以后你自己怎么用好它

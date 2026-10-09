@@ -11,9 +11,17 @@ from pathlib import Path
 
 import httpx
 
-VERSION = '0.3.3'
-JEV_API = os.environ.get('TYPESAFE_API_URL', 'https://api.typesafe.ai/v1/systemone')
-JEV_MODEL = os.environ.get('TYPESAFE_MODEL', 'jev-latest')
+VERSION = '0.3.4'
+# Where Jev can be reached. All of these speak the same System One protocol (state + typed questions
+# in, probabilities out); only the address, the key and the name of the model differ.
+PROVIDERS = {
+    'typesafe': {'url': os.environ.get('TYPESAFE_API_URL', 'https://api.typesafe.ai/v1/systemone'),
+                 'model': os.environ.get('TYPESAFE_MODEL', 'jev-latest'), 'env': 'TYPESAFE_API_KEY', 'file': 'typesafe_key'},
+    'openrouter': {'url': 'https://openrouter.ai/api/v1/systemone', 'model': '~typesafe/jev-latest',
+                   'env': 'OPENROUTER_API_KEY', 'file': 'openrouter_key'},
+    'commandcode': {'url': 'https://api.commandcode.ai/provider/v1/systemone', 'model': 'typesafe/jev',
+                    'env': 'COMMANDCODE_API_KEY', 'file': 'commandcode_key'},
+}
 CONF = Path.home() / '.reflexcu'
 
 if sys.platform == 'win32':
@@ -120,20 +128,42 @@ def setting(env, name):
 _http = httpx.Client(trust_env=False, timeout=8, proxy=setting('CU_PROXY', 'proxy') or None)
 
 
-def jev_key():
-    return setting('TYPESAFE_API_KEY', 'typesafe_key')
+def jev_provider():
+    """(name, key) of the provider to ask: the one named in CU_JEV_PROVIDER (or the file jev_provider),
+    otherwise the first one that has a key. The key is '' when none is configured."""
+    want = setting('CU_JEV_PROVIDER', 'jev_provider').lower()
+    if want and want not in PROVIDERS:
+        raise RuntimeError(f"unknown Jev provider {want!r}: use one of {', '.join(PROVIDERS)}")
+    for name, p in PROVIDERS.items():
+        if want in ('', name):
+            key = setting(p['env'], p['file'])
+            if key or want:
+                return name, key
+    return None, ''
 
 
 def jev(state, questions):
-    key = jev_key()
+    name, key = jev_provider()
     if not key:
-        raise RuntimeError(f"no Jev key: bring your own TypeSafe key, in TYPESAFE_API_KEY or in the file {CONF / 'typesafe_key'}")
-    r = _http.post(JEV_API, json={'model': JEV_MODEL, 'state': state, 'questions': questions},
-                   headers={'Authorization': 'Bearer ' + key})
+        raise RuntimeError('no Jev key: bring your own, from any one of ' + '; '.join(
+            f"{n} ({q['env']}, or the file {CONF / q['file']})" for n, q in PROVIDERS.items()))
+    p = PROVIDERS[name]
+    # CU_JEV_URL / CU_JEV_MODEL point the chosen key at any other gateway that speaks the same protocol
+    r = _http.post(setting('CU_JEV_URL', 'jev_url') or p['url'], headers={'Authorization': 'Bearer ' + key},
+                   json={'model': setting('CU_JEV_MODEL', 'jev_model') or p['model'], 'state': state, 'questions': questions})
     if r.status_code == 451:
-        raise RuntimeError(f"the Jev API refuses requests from this network (HTTP 451); put a proxy URL in CU_PROXY or in the file {CONF / 'proxy'}")
-    r.raise_for_status()
-    return r.json()['answers']
+        raise RuntimeError(f"the Jev API at {name} refuses requests from this network (HTTP 451); put a proxy URL in CU_PROXY "
+                           f"or in the file {CONF / 'proxy'}" + (', or reach Jev through another provider (OpenRouter, Command Code)' if name == 'typesafe' else ''))
+    if r.status_code in (401, 403):
+        raise RuntimeError(f"{name} rejected the Jev key (HTTP {r.status_code}); check the key in {p['env']} or {CONF / p['file']}")
+    if r.status_code == 402:
+        raise RuntimeError(f"the {name} account has no credit left for Jev (HTTP 402)")
+    if r.status_code >= 400:
+        raise RuntimeError(f"Jev request to {name} failed (HTTP {r.status_code}): {r.text[:200]}")
+    body = r.json()
+    if 'answers' not in body:
+        raise RuntimeError(f"unexpected Jev response from {name}: {r.text[:200]}")
+    return body['answers']
 
 
 def screen_text(els, cap=6000):
@@ -220,6 +250,14 @@ def jev_check(question, window=None, source='auto'):
 
 # ---- operations ----
 
+def jev_status():
+    try:
+        name, key = jev_provider()
+    except RuntimeError as e:
+        return {'jev': False, 'jev_error': str(e)}
+    return {'jev': bool(key), 'jev_provider': name} if key else {'jev': False}
+
+
 def op_status(a):
     try:
         fg = B.find_window(None)
@@ -227,7 +265,7 @@ def op_status(a):
         fg = None
     return {'version': VERSION, 'host': os.environ.get('COMPUTERNAME') or os.uname().nodename,
             'screen': list(B.screen_size()), 'view': list(B.view_size()), 'scale': round(B.scale_factor(), 4),
-            'foreground': fg, 'idle_seconds': B.idle_seconds(), 'jev': bool(jev_key()), 'time': round(time.time(), 3),
+            'foreground': fg, 'idle_seconds': B.idle_seconds(), **jev_status(), 'time': round(time.time(), 3),
             **B.status_extra()}
 
 
