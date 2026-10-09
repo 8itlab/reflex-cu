@@ -1,0 +1,32 @@
+[project]
+name = "reflexcu"
+version = "0.3.0"
+description = "Desktop control (computer use) MCP server for coding agents: local macOS, local Windows, or a remote Windows machine over SSH, with Jev as the fast judge between steps."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.26",
+    "pillow",
+    "mss; sys_platform == 'win32'",
+    "comtypes; sys_platform == 'win32'",
+    "pywin32; sys_platform == 'win32'",
+    "numpy; sys_platform == 'win32'",
+    "onnxruntime; sys_platform == 'win32'",
+    "rapidocr-onnxruntime; sys_platform == 'win32'",
+    "pyobjc-framework-Quartz; sys_platform == 'darwin'",
+    "pyobjc-framework-Vision; sys_platform == 'darwin'",
+    "pyobjc-framework-ApplicationServices; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa; sys_platform == 'darwin'",
+]
+
+[project.scripts]
+reflexcu-mcp = "reflexcu.server:main"
+reflexcu-daemon = "reflexcu.daemon:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["reflexcu"]

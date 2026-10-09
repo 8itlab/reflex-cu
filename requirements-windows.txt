@@ -1,0 +1,8 @@
+httpx
+mss
+pillow
+comtypes
+pywin32
+numpy
+onnxruntime
+rapidocr-onnxruntime

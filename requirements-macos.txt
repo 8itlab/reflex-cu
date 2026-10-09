@@ -1,0 +1,6 @@
+httpx
+pillow
+pyobjc-framework-Quartz
+pyobjc-framework-Vision
+pyobjc-framework-ApplicationServices
+pyobjc-framework-Cocoa

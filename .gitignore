@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+token.txt
+daemon.log
+typesafe_key
+*.egg-info/
+dist/
+build/
