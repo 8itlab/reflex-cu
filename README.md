@@ -45,6 +45,8 @@
 
 ## 安装
 
+想让 AI 替你装：把 [INSTALL_FOR_AI.md](INSTALL_FOR_AI.md) 的链接发给你的编码代理，让它照着做。下面是手动安装的步骤。
+
 需要 Python 3.10 以上。
 
 ### Jev 密钥（需自备）

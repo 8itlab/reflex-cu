@@ -47,6 +47,8 @@ All coordinates refer to a screenshot taken without `zoom`: the main display sca
 
 ## Installation
 
+To have an AI install it for you, give your coding agent the link to [INSTALL_FOR_AI.en.md](INSTALL_FOR_AI.en.md) and ask it to follow that. Manual steps are below.
+
 Python 3.10 or later.
 
 ### Jev API key (bring your own)
