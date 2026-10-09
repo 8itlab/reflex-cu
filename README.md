@@ -100,6 +100,17 @@ claude mcp add winbox -s user -e CU_SSH=<ssh 别名> -e 'CU_DIR=C:\reflexcu' -- 
 
 要连多台机器，就各注册一个，并用 `CU_LPORT` 给每台分一个不同的本地端口。
 
+## 在 Codex（ChatGPT 桌面应用）里用
+
+它是标准的 stdio MCP 服务，Codex 同样能用。把上面 `claude mcp add` 换成 `codex mcp add`，环境变量用 `--env`：
+
+```
+codex mcp add reflexcu -- ~/.reflexcu/venv/bin/python /path/to/reflex-cu/reflexcu/server.py
+codex mcp add winbox --env CU_SSH=<ssh 别名> --env 'CU_DIR=C:\reflexcu' -- python3 /path/to/reflex-cu/reflexcu/server.py
+```
+
+只读工具（`status`、`screenshot`、`windows`、`observe`、`check`、`wait`）带有只读标注，`codex exec` 这类非交互运行可以直接调用；会动鼠标键盘的工具需要你在交互界面里批准。在 Mac 上，系统权限是按启动服务的应用给的：从 ChatGPT 应用里用，就要给 ChatGPT 开"辅助功能"和"屏幕录制"。
+
 ## 配置
 
 | 环境变量 | 用在哪 | 含义 |

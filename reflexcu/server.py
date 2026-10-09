@@ -155,8 +155,15 @@ else:
     WHERE = '操作本机 Windows 的桌面。'
 
 
+# Tools that only look. Clients use the hint to skip confirmation prompts (Codex refuses
+# unannotated tools outright in non-interactive runs). `find` and `steps` can click, so they are not here.
+READ_ONLY = {'status', 'screenshot', 'windows', 'observe', 'check', 'wait'}
+
+
 def tool_list():
-    return [{'name': n, 'description': d, 'inputSchema': {'type': 'object', 'properties': p, 'required': r}}
+    return [{'name': n, 'description': d, 'inputSchema': {'type': 'object', 'properties': p, 'required': r},
+             'annotations': {'readOnlyHint': True, 'openWorldHint': False} if n in READ_ONLY
+             else {'readOnlyHint': False, 'destructiveHint': False, 'openWorldHint': False}}
             for n, (d, p, r) in TOOLS.items()]
 
 

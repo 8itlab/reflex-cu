@@ -102,6 +102,17 @@ claude mcp add winbox -s user -e CU_SSH=<ssh alias> -e 'CU_DIR=C:\reflexcu' -- p
 
 For several machines, register one server per machine and give each its own local port with `CU_LPORT`.
 
+## Using it from Codex (the ChatGPT desktop app)
+
+It is a standard stdio MCP server, so Codex can use it too. Replace `claude mcp add` above with `codex mcp add`, and pass environment variables with `--env`:
+
+```
+codex mcp add reflexcu -- ~/.reflexcu/venv/bin/python /path/to/reflex-cu/reflexcu/server.py
+codex mcp add winbox --env CU_SSH=<ssh alias> --env 'CU_DIR=C:\reflexcu' -- python3 /path/to/reflex-cu/reflexcu/server.py
+```
+
+The read-only tools (`status`, `screenshot`, `windows`, `observe`, `check`, `wait`) carry a read-only annotation, so non-interactive runs such as `codex exec` can call them directly; tools that move the mouse or press keys need your approval in the interactive UI. On macOS, permissions belong to the app that launches the server: when used from the ChatGPT app, grant Accessibility and Screen Recording to ChatGPT.
+
 ## Configuration
 
 | Variable | Read by | Meaning |
