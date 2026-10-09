@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-VERSION = '0.3.0'
+VERSION = '0.3.2'
 JEV_API = os.environ.get('TYPESAFE_API_URL', 'https://api.typesafe.ai/v1/systemone')
 JEV_MODEL = os.environ.get('TYPESAFE_MODEL', 'jev-latest')
 CONF = Path.home() / '.reflexcu'
@@ -69,16 +69,36 @@ def center(e):
     return (r[0] + r[2]) // 2, (r[1] + r[3]) // 2
 
 
-def label(e):
-    return f"{e['role']}：{e['text'] or '（无名称）'}" + ('（禁用）' if e.get('disabled') else '')
+def label(e, picking=False):
+    """One line a text-only judge (and the agent) can act on: role, name, then whatever disambiguates it.
+
+    When the judge is choosing what to operate, "selected" is left off ordinary items: it reads it as
+    "nothing to do here" and backs away from the very item that was asked for."""
+    owner = e.get('of')
+    notes = [(f'“{owner}”的选项' if owner else '弹出菜单的选项') if e.get('popup') else f'属于“{owner}”' if owner else '',
+             e.get('state') or '', '已选中' if e.get('selected') and (e.get('popup') or not picking) else '',
+             '要滚动才能看到' if e.get('hidden') else '', '禁用' if e.get('disabled') else '']
+    notes = '，'.join(n for n in notes if n)
+    return f"{e['role']}：{e['text'] or '（无名称）'}" + (f'（{notes}）' if notes else '')
 
 
 def brief(e):
+    if e.get('hidden'):
+        return {'id': e['id'], 'label': label(e), 'offscreen': True}  # no position until it is scrolled to
     x, y = center(e)
     out = {'id': e['id'], 'label': label(e), 'x': x, 'y': y, 'rect': e['rect']}
     if e.get('popup'):
         out['popup'] = True
     return out
+
+
+def shown(e):
+    """Make sure an element can be clicked: one that is scrolled out of view is brought in first."""
+    if e.get('hidden'):
+        e['rect'] = clip(B.reveal(e))
+        del e['hidden']
+        time.sleep(0.1)
+    return e
 
 
 def name_of(info):
@@ -121,34 +141,69 @@ def screen_text(els, cap=6000):
     rows = sorted(els, key=lambda e: (e['rect'][1] // 12, e['rect'][0]))
     # An open menu is what matters right now; a judge reading 100 lines of window text would miss it at the end.
     menu = [label(e) for e in rows if e.get('popup')]
-    head = '【当前弹出的菜单】\n' + '\n'.join(menu) + '\n【窗口内容】\n' if menu else ''
-    return (head + '\n'.join(label(e) for e in rows if e['text'] and not e.get('popup')))[:cap]
+    head = '【当前弹出的菜单或下拉列表】\n' + '\n'.join(menu) + '\n【窗口内容】\n' if menu else ''
+    below = [e['text'] for e in els if e.get('hidden')]
+    tail = '\n【窗口里还有这些项，但要滚动才能看到】\n' + '、'.join(below) if below else ''
+    body = '\n'.join(label(e) for e in rows if e['text'] and not e.get('popup') and not e.get('hidden'))
+    return (head + body)[:cap - len(tail)] + tail
+
+
+def dedupe(cands):
+    """One option per control. A UI tree usually lists the same control several times (a list item,
+    the group inside it, its text label); offered as separate options they split the judge's
+    confidence between them. Keep the clickable one, or else the smallest."""
+    def inside(a, b):
+        cx, cy = center(a)
+        return b['rect'][0] <= cx <= b['rect'][2] and b['rect'][1] <= cy <= b['rect'][3]
+
+    area = lambda e: (e['rect'][2] - e['rect'][0]) * (e['rect'][3] - e['rect'][1])
+    kept = []
+    for e in sorted(cands, key=lambda e: (not e['clickable'], area(e))):
+        if e['text'] and any(o['text'] == e['text'] and (inside(e, o) or inside(o, e)) for o in kept):
+            continue
+        kept.append(e)
+    return sorted(kept, key=lambda e: e['id'])
 
 
 PICK = '要完成 `goal`，现在应该操作 `window` 窗口里的哪一个界面元素？只在有明确对应的元素时才选，否则选 none。'
+# Without this the judge hedges between an option and the control it belongs to: a flat list of
+# candidates does not say that an open list is waiting for an answer.
+PICK_OPEN = ' `open` 说明当前有一个展开的下拉列表或菜单，它的选项在文字里标了“的选项”；这种时候目标通常是其中一个选项。'
 
 
 def jev_pick(goal, els, context=''):
     """Which element serves `goal`? Returns (element or None, confidence, ranked alternatives)."""
-    cands = [e for e in els if e['text'] or e['clickable']]
+    cands = dedupe([e for e in els if e['text'] or e['clickable']])
     if not cands:
         return None, 0.0, []
     byid = {e['id']: e for e in els}
+    # An agent often quotes a label it has just read. That needs no judgment, and a fuzzy judge is
+    # oddly unsure about it when two controls share a name.
+    said = goal.strip()
+    exact = [e for e in cands if said in (label(e), label(e, True), f"{e['role']}：{e['text']}", e['text'])]
+    if len(exact) == 1:
+        return exact[0], 1.0, [(1.0, exact[0])]
+
+    state, instructions = {'goal': goal, 'window': context}, PICK
+    owners = {e.get('of') or '' for e in cands if e.get('popup')}
+    if owners:
+        named = '、'.join(f'“{o}”' for o in sorted(owners) if o)
+        state['open'] = (f'下拉列表{named}已展开' if named else '有一个菜单已弹出') + '，正在等待选择一个选项'
+        instructions += PICK_OPEN
 
     def ask(crit):
         crit = dict(crit, none='以上都不是，或者屏幕上没有合适的元素')
-        probs = jev({'goal': goal, 'window': context},
-                    {'pick': {'type': 'choice', 'criteria': crit, 'instructions': PICK}})['pick'].get('probabilities') or {}
+        probs = jev(state, {'pick': {'type': 'choice', 'criteria': crit, 'instructions': instructions}})['pick'].get('probabilities') or {}
         return sorted(((p, k) for k, p in probs.items() if k != 'none'), reverse=True)
 
     # Jev caps a choice at 255 options: run heats, then a final among the heat winners.
     heats = [cands[i:i + 200] for i in range(0, len(cands), 200)]
     best = []
     for heat in heats:
-        best += ask({f"e{e['id']}": label(e) for e in heat})[:5]
+        best += ask({f"e{e['id']}": label(e, True) for e in heat})[:5]
     best.sort(reverse=True)
     if len(heats) > 1 and best:
-        best = ask({k: label(byid[int(k[1:])]) for _, k in best[:20]})
+        best = ask({k: label(byid[int(k[1:])], True) for _, k in best[:20]})
     ranked = [(round(p, 3), byid[int(k[1:])]) for p, k in best[:4] if p > 0.01]
     if not ranked:
         return None, 0.0, []
@@ -172,7 +227,8 @@ def op_status(a):
         fg = None
     return {'version': VERSION, 'host': os.environ.get('COMPUTERNAME') or os.uname().nodename,
             'screen': list(B.screen_size()), 'view': list(B.view_size()), 'scale': round(B.scale_factor(), 4),
-            'foreground': fg, 'idle_seconds': B.idle_seconds(), 'jev': bool(jev_key()), **B.status_extra()}
+            'foreground': fg, 'idle_seconds': B.idle_seconds(), 'jev': bool(jev_key()), 'time': round(time.time(), 3),
+            **B.status_extra()}
 
 
 def op_screenshot(a):
@@ -194,8 +250,9 @@ def op_focus(a):
 
 def op_observe(a):
     info, els = observe(a.get('window'), a.get('source', 'auto'), a.get('region'))
-    q = (a.get('filter') or '').lower()
-    shown = [e for e in els if q in e['text'].lower()] if q else els
+    # "模式|透明" keeps elements containing either word; the label is searched too, so "已展开" or "关" work
+    words = [w for w in (a.get('filter') or '').lower().split('|') if w.strip()]
+    shown = [e for e in els if any(w.strip() in label(e).lower() for w in words)] if words else els
     return {'window': info, 'count': len(els), 'elements': [brief(e) for e in shown[:int(a.get('limit', 150))]]}
 
 
@@ -205,7 +262,7 @@ def target(a):
         i = int(a['id'])
         if not 0 <= i < len(els):
             raise ValueError(f'no element {i} in the last observation')
-        return center(els[i])
+        return center(shown(els[i]))
     return int(a['x']), int(a['y'])
 
 
@@ -257,7 +314,7 @@ def op_find(a):
     need = float(a.get('min_confidence', 0.75))
     if a.get('click') and el:
         if conf >= need and not el.get('disabled'):
-            x, y = center(el)
+            x, y = center(shown(el))
             B.click(x, y, a.get('button', 'left'), int(a.get('count', 1)))
             out['clicked'] = [x, y]
         else:
@@ -275,7 +332,7 @@ def op_check(a):
 
 def op_wait(a):
     """Poll until Jev says `question` holds. Saves a full model round trip per poll."""
-    deadline = time.time() + min(float(a.get('timeout', 20)), 120)
+    deadline = time.time() + min(float(a.get('timeout', 10)), 120)
     need = float(a.get('threshold', 0.7))
     polls, p, info = 0, 0.0, {}
     while True:
@@ -307,19 +364,22 @@ def op_steps(a):
         except Exception as e:
             done.append({'step': i, 'op': op, 'error': repr(e)[:300]})
             break
-        if op == 'observe':
-            res.pop('elements', None)
+        if op == 'observe' and i < len(a['steps']) - 1:
+            res.pop('elements', None)  # only a closing observe is worth its length
         done.append({'step': i, 'op': op, **res})
         stuck = (op == 'find' and step.get('click') and not res.get('clicked')) or \
                 (op in ('wait', 'check') and not res.get('yes') and step.get('required', True))
         if stuck:
             done[-1]['stopped'] = True
             break
-        time.sleep(float(step.get('pause', a.get('pause', 0.35))))
+        # the screen needs a moment after something was done to it, not after it was merely read
+        if i < len(a['steps']) - 1 and (op in ACTING or res.get('clicked')):
+            time.sleep(float(step.get('pause', a.get('pause', 0.35))))
     return {'completed': len(done) == len(a['steps']) and not done[-1].get('stopped') and 'error' not in done[-1],
             'steps': done}
 
 
+ACTING = {'focus', 'click', 'move', 'drag', 'scroll', 'key', 'type'}
 OPS = {'status': op_status, 'screenshot': op_screenshot, 'windows': op_windows, 'focus': op_focus,
        'observe': op_observe, 'click': op_click, 'move': op_move, 'drag': op_drag, 'scroll': op_scroll,
        'key': op_key, 'type': op_type, 'find': op_find, 'check': op_check, 'wait': op_wait, 'steps': op_steps}

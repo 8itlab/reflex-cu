@@ -351,6 +351,9 @@ ROLES = {50000: '按钮', 50002: '复选框', 50003: '下拉框', 50004: '输入
          50036: '表格', 50037: '标题栏'}
 CLICKABLE = {50000, 50002, 50003, 50004, 50005, 50007, 50011, 50013, 50015, 50019, 50024, 50029, 50031}
 CONTAINERS = {50008, 50009, 50010, 50018, 50021, 50023, 50026, 50028, 50032, 50033, 50036, 50037}
+# Control types that toolkits reuse for more specific things, and the localized names that add nothing.
+LOOSE = {50000, 50025, 50026, 50033}
+PLAIN = {'按钮', 'button', '自定义', 'custom', '组', 'group', '窗格', 'pane'}
 
 
 def uia():
@@ -365,49 +368,155 @@ def uia():
     return _uia
 
 
-def observe_uia(hwnd, limit=600, clip=True):
+# What is cached for every element. The pattern-availability flags come first: a state property of a
+# pattern the element does not have reads back as that property's default, not as "unknown".
+PROPS = {'name': 30005, 'ct': 30003, 'kind': 30004, 'box': 30001, 'enabled': 30010, 'aid': 30011, 'cls': 30012, 'password': 30019,
+         'toggle?': 30041, 'toggle': 30086, 'expand?': 30028, 'expand': 30070,
+         'selected?': 30036, 'selected': 30079, 'value?': 30043, 'value': 30045, 'offscreen': 30022, 'scrollitem?': 30035}
+
+
+def uia_tree(hwnd, cap=4000):
+    """The controls under a window, in tree order, each linked to its parent and children.
+
+    One cross-process call brings back the whole subtree. The structure is what a flat list of
+    names cannot give: which options belong to which dropdown, which of them is selected."""
     auto, U = uia()
-    root = auto.ElementFromHandle(hwnd)
     req = auto.CreateCacheRequest()
-    for p in (30005, 30003, 30001, 30010, 30011):  # Name, ControlType, BoundingRectangle, IsEnabled, AutomationId
+    for p in PROPS.values():
         req.AddProperty(p)
-    cond = auto.CreatePropertyCondition(30022, False)  # IsOffscreen == false
-    found = root.FindAllBuildCache(U.TreeScope_Descendants, cond, req)
-    mon = monitor()
-    wr = wintypes.RECT()
-    u32.GetWindowRect(hwnd, ctypes.byref(wr))
-    out = []
-    for i in range(min(found.Length, 4000)):
-        e = found.GetElement(i)
+    req.TreeScope = U.TreeScope_Subtree
+    req.TreeFilter = auto.ControlViewCondition
+    nodes, stack = [], [(auto.ElementFromHandle(hwnd).BuildUpdatedCache(req), None)]
+    while stack and len(nodes) < cap:
+        e, parent = stack.pop()
         try:
-            ct = e.CachedControlType
-            name = (e.CachedName or '').strip()
+            v = {k: e.GetCachedPropertyValue(p) for k, p in PROPS.items()}
             r = e.CachedBoundingRectangle
         except Exception:
             continue
-        w, h = r.right - r.left, r.bottom - r.top
-        if w < 3 or h < 3 or (clip and (r.right <= wr.left or r.left >= wr.right or r.bottom <= wr.top or r.top >= wr.bottom)):
+        n = {'ct': v['ct'], 'name': (v['name'] or '').strip(), 'box': (r.left, r.top, r.right, r.bottom),
+             'aid': v['aid'] or '', 'cls': v['cls'] or '', 'kind': v['kind'] if isinstance(v['kind'], str) else '', 'enabled': v['enabled'], 'password': bool(v['password']),
+             'toggle': v['toggle'] if v['toggle?'] else None, 'expand': v['expand'] if v['expand?'] else None,
+             'selected': bool(v['selected']) if v['selected?'] else None,
+             'value': v['value'] if v['value?'] and isinstance(v['value'], str) else None,
+             'offscreen': bool(v['offscreen']), 'el': e if v['offscreen'] and v['scrollitem?'] else None,
+             'parent': parent, 'kids': []}
+        if parent:
+            parent['kids'].append(n)
+        nodes.append(n)
+        kids = e.GetCachedChildren()
+        stack += [(kids.GetElement(i), n) for i in reversed(range(kids.Length if kids else 0))]
+    return nodes
+
+
+def observe_uia(hwnd, limit=600, clip=True):
+    nodes = uia_tree(hwnd)
+    mon = monitor()
+    wr = wintypes.RECT()
+    u32.GetWindowRect(hwnd, ctypes.byref(wr))
+    out, hidden = [], 0
+    for n in nodes:
+        ct, name, p = n['ct'], n['name'], n['parent']
+        l, t, r, b = n['box']
+        if p and p.get('drop'):
+            n['drop'] = True  # nothing under a dropped element is listed either
+            continue
+        if n['offscreen']:
+            # Scrolled out of view. A screenshot cannot know these exist; the tree does, and it can
+            # bring them into view (see reveal), so list the ones that can be operated.
+            if n['el'] and name and ct in CLICKABLE and hidden < 60:
+                hidden += 1
+                n['drop'] = True
+                out.append(({'role': ROLES.get(ct, '元素'), 'text': name[:120], 'rect': [0, 0, 0, 0], 'src': 'uia',
+                             'clickable': True, 'hidden': True, '_el': n['el']}, n))
+            continue
+        if r - l < 3 or b - t < 3 or (clip and (r <= wr.left or l >= wr.right or b <= wr.top or t >= wr.bottom)):
+            continue
+        if n.get('drop') or 'LightDismiss' in n['cls']:
+            # the invisible full-window layer behind an open dropdown is a button called 关闭
+            n['drop'] = True
             continue
         if not name and ct not in CLICKABLE:
             continue
         if ct in CONTAINERS and not name:
             continue
-        item = {'role': ROLES.get(ct, '元素'), 'text': name[:120], 'rect': view_rect(r.left, r.top, r.right, r.bottom, mon),
+        if ct == 50020 and p and p.get('item') and p['name'] == name and p['ct'] in CLICKABLE:
+            continue  # the caption inside a button or list item that already carries the same name
+        role = ROLES.get(ct, '元素')
+        if ct in LOOSE and n['kind'] and n['kind'].lower() not in PLAIN:
+            role = n['kind'][:20]  # the toolkit's own word for it: "切换开关" says more than "按钮"
+        item = {'role': role, 'text': name[:120] or n['aid'][:60], 'rect': view_rect(l, t, r, b, mon),
                 'src': 'uia', 'clickable': ct in CLICKABLE}
-        if not name:
-            try:
-                item['text'] = (e.CachedAutomationId or '')[:60]
-            except Exception:
-                pass
-        try:
-            if not e.CachedIsEnabled:
-                item['disabled'] = True
-        except Exception:
-            pass
-        out.append(item)
+        if n['enabled'] is False:
+            item['disabled'] = True
+        state = []
+        if ct == 50003:
+            # A dropdown and its options are one control: say what it is set to, and when it is open
+            # mark the options as belonging to it. Closed, it shows its current value as a lone item.
+            options = [k for k in n['kids'] if k['ct'] == 50007]
+            current = next((k['name'] for k in options if k['selected']), '') or (n['value'] or '').strip()
+            if n['expand'] == 1:
+                state.append('已展开')
+            if current:
+                state.append('当前：' + current[:40])
+            for k in options:
+                if n['expand'] == 1:
+                    k['option_of'] = name
+                elif n['expand'] == 0:
+                    k['drop'] = True
+        else:
+            if n['toggle'] is not None:
+                # switches and check boxes: whether they are on is the whole point of reading them
+                state.append({0: '关', 1: '开'}.get(n['toggle'], '部分'))
+            if n['expand'] in (0, 1):
+                state.append('已展开' if n['expand'] else '已折叠')
+            if ct == 50004 and n['value'] is not None and not n['password']:
+                v = ' '.join(n['value'].split())
+                if v != name:
+                    state.append('内容：' + v[:60] if v else '内容为空')
+        if state:
+            item['state'] = '，'.join(state)
+        if n['selected'] and ct != 50003:
+            item['selected'] = True
+        if n.get('option_of'):
+            item.update(popup=True, of=n['option_of'])
+        n['item'] = item
+        out.append((item, n))
         if len(out) >= limit:
             break
-    return out
+    # Several controls with the same name ("显示更多设置" once per section): say which section each is in.
+    same = {}
+    for item, n in out:
+        if item['clickable'] and 'of' not in item:
+            same.setdefault((item['role'], item['text']), []).append((item, n))
+    for group in same.values():
+        owners = []
+        for item, n in group:
+            a = n['parent']
+            while a and (not a['name'] or a['name'] == n['name']):
+                a = a['parent']
+            owners.append(a['name'][:40] if a and a['parent'] else '')  # the window itself says nothing
+        if len(group) > 1 and len(set(owners)) > 1:
+            for (item, n), owner in zip(group, owners):
+                if owner:
+                    item['of'] = owner
+    return [item for item, n in out]
+
+
+def reveal(item):
+    """Scroll an off-screen element into view; returns its rect once it has settled."""
+    auto, U = uia()
+    e = item['_el']
+    e.GetCurrentPattern(10017).QueryInterface(U.IUIAutomationScrollItemPattern).ScrollIntoView()
+    mon, last = monitor(), None
+    for _ in range(14):  # scrolling is animated: wait until the rectangle stops moving
+        time.sleep(0.12)
+        r = e.CurrentBoundingRectangle
+        box = (r.left, r.top, r.right, r.bottom)
+        if box == last and r.right - r.left > 2 and r.bottom - r.top > 2 and not e.CurrentIsOffscreen:
+            return view_rect(*box, mon)
+        last = box
+    raise RuntimeError('the element did not scroll into view')
 
 
 _ocr = None

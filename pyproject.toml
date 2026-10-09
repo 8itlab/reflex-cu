@@ -1,6 +1,6 @@
 [project]
 name = "reflexcu"
-version = "0.3.0"
+version = "0.3.2"
 description = "Desktop control (computer use) MCP server for coding agents: local macOS, local Windows, or a remote Windows machine over SSH, with Jev as the fast judge between steps."
 readme = "README.md"
 license = { text = "MIT" }

@@ -11,6 +11,9 @@ Environment for the remote mode:
   CU_TOKEN  the token itself, instead of reading it over ssh
   CU_LPORT  local end of the tunnel   (default 18765; use a different one per machine)
   CU_RPORT  daemon port on the remote (default 8765)
+
+CU_TOOLS=screenshot exposes only the classic screenshot-and-click tools. It exists for benchmarks
+(bench/race.py), as the baseline to compare the full tool set against.
 """
 import json
 import os
@@ -113,7 +116,8 @@ TOOLS = {
                     'zoom': {'type': 'boolean'}}, []),
     'windows': ('列出可见窗口（标题、进程、位置、是否前台）。', {}, []),
     'focus': ('把窗口切到前台。', WIN, ['window']),
-    'observe': ('读出窗口里的界面元素（名称、类型、中心坐标），不经过截图，比看图快得多。打开着的菜单也会列出（popup=true）。filter 按文字过滤。',
+    'observe': ('读出窗口里的界面元素（名称、类型、中心坐标），不经过截图。开关带开/关，下拉框带当前值和是否展开，'
+                '重名的控件标出所属分组；打开着的菜单和下拉选项也会列出（popup=true）。滚动区域里还没滚到的项也会列出（offscreen=true，没有坐标）：用 id 点击或 find 点击时会先自动滚动到它。filter 按文字过滤，多个词用 | 隔开。',
                 {**WIN, **SRC, 'filter': {'type': 'string'}, 'limit': {'type': 'integer'},
                  'region': {'type': 'array', 'items': {'type': 'integer'}}}, []),
     'click': ('点击坐标或元素 id。', {**XY, 'button': {'type': 'string', 'enum': ['left', 'right', 'middle']},
@@ -137,13 +141,15 @@ TOOLS = {
     'check': ('【Jev】对当前屏幕上的文字问一个是非题，返回概率。用来确认上一步有没有成功。',
               {'question': {'type': 'string', 'description': '例如 "保存对话框是否已经打开？"'},
                'threshold': {'type': 'number'}, **WIN, **SRC}, ['question']),
-    'wait': ('【Jev】反复看屏幕，直到是非题成立或超时（默认 20 秒，最长 120 秒）。等加载、等弹窗时用，不用一遍遍截图。',
+    'wait': ('【Jev】反复看屏幕，直到是非题成立或超时（默认 10 秒，最长 120 秒）。等加载、等弹窗时用，不用一遍遍截图。',
              {'question': {'type': 'string'}, 'timeout': {'type': 'number'}, 'interval': {'type': 'number'},
               'threshold': {'type': 'number'}, **WIN, **SRC}, ['question']),
-    'steps': ('一次执行一串操作，中途不回来问。每步是 {"op": 上面任一工具名（screenshot 除外）, ...该工具的参数}。'
-              'find 没把握、wait/check 不成立或出错时立刻停下并返回已做到哪一步。适合路径明确的多步操作。',
+    'steps': ('一次执行一串操作，中途不回来问。每步是 {"op": 上面任一工具名（screenshot 除外）, ...该工具的参数}，'
+              '例如 [{"op":"find","goal":"个性化","click":true},{"op":"wait","question":"是否出现了颜色这一项？"},'
+              '{"op":"find","goal":"颜色","click":true},{"op":"observe","filter":"模式"}]。'
+              'find 没把握、wait/check 不成立或出错时立刻停下并返回已做到哪一步。最后一步是 observe 时会带回读到的元素。适合路径明确的多步操作。',
               {'steps': {'type': 'array', 'items': {'type': 'object'}},
-               'pause': {'type': 'number', 'description': '步间停顿秒数，默认 0.35'}}, ['steps']),
+               'pause': {'type': 'number', 'description': '每次动鼠标键盘之后的停顿秒数，默认 0.35'}}, ['steps']),
 }
 
 
@@ -160,15 +166,33 @@ else:
 READ_ONLY = {'status', 'screenshot', 'windows', 'observe', 'check', 'wait'}
 
 
+BASELINE = os.environ.get('CU_TOOLS') == 'screenshot'
+BASELINE_TOOLS = ('screenshot', 'click', 'move', 'drag', 'scroll', 'key', 'type')
+
+
+HOWTO = ('先用 screenshot 看屏幕，再按截图里的坐标操作。' if os.environ.get('CU_TOOLS') == 'screenshot' else
+         '开始前先调 status：idle_seconds 很小说明用户正在用，先问用户。'
+         '读界面用 observe，它直接给出控件的名称、开关状态和坐标；'
+         '只有图标、游戏画面这类没有文字的内容才用 screenshot 看图再按坐标点。'
+         '路径明确的多步操作可以写进一次 steps，它会在没把握的那一步自己停下。')
+
+
 def tool_list():
-    return [{'name': n, 'description': d, 'inputSchema': {'type': 'object', 'properties': p, 'required': r},
-             'annotations': {'readOnlyHint': True, 'openWorldHint': False} if n in READ_ONLY
-             else {'readOnlyHint': False, 'destructiveHint': False, 'openWorldHint': False}}
-            for n, (d, p, r) in TOOLS.items()]
+    out = []
+    for n, (d, p, r) in TOOLS.items():
+        if BASELINE:
+            if n not in BASELINE_TOOLS:
+                continue
+            p = {k: v for k, v in p.items() if k != 'id'}  # element ids come from observe, which this mode lacks
+            d = d.replace('点击坐标或元素 id。', '点击坐标。')
+        out.append({'name': n, 'description': d, 'inputSchema': {'type': 'object', 'properties': p, 'required': r},
+                    'annotations': {'readOnlyHint': True, 'openWorldHint': False} if n in READ_ONLY
+                    else {'readOnlyHint': False, 'destructiveHint': False, 'openWorldHint': False}})
+    return out
 
 
 def run_tool(name, args):
-    if name not in TOOLS:
+    if name not in TOOLS or (BASELINE and name not in BASELINE_TOOLS):
         raise RuntimeError(f'unknown tool {name}')
     res = call(name, args or {})
     if name == 'screenshot':
@@ -183,10 +207,8 @@ def handle(msg):
     if m == 'initialize':
         return {'jsonrpc': '2.0', 'id': i, 'result': {
             'protocolVersion': msg['params'].get('protocolVersion', '2024-11-05'),
-            'capabilities': {'tools': {}}, 'serverInfo': {'name': 'reflexcu', 'version': '0.3.0'},
-            'instructions': (WHERE + '优先用 observe/find/check/wait/steps（读界面文字 + Jev 判断，快且省），'
-                             '只有图标、游戏画面这类没有文字的内容才用 screenshot 看图再按坐标点。'
-                             '每次开始前先调 status：idle_seconds 很小说明用户正在用，先问用户。')}}
+            'capabilities': {'tools': {}}, 'serverInfo': {'name': 'reflexcu', 'version': '0.3.2'},
+            'instructions': WHERE + HOWTO}}
     if m == 'tools/list':
         return {'jsonrpc': '2.0', 'id': i, 'result': {'tools': tool_list()}}
     if m == 'tools/call':

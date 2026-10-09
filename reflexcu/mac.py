@@ -391,6 +391,8 @@ def observe_tree(info, limit=600, budget=3.0):
             continue
         item = {'role': '标签页' if sub == 'AXTabButton' else ROLES.get(role, '元素'), 'text': text[:120].replace('\n', ' '),
                 'rect': rect, 'src': 'ax', 'clickable': role in CLICKABLE}
+        if role in ('AXCheckBox', 'AXSwitch', 'AXRadioButton') and isinstance(vals[4], (int, float)) and not isinstance(vals[4], bool):
+            item['state'] = '开' if vals[4] else '关'
         if enabled is False:
             item['disabled'] = True
         out.append(item)

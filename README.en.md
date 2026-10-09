@@ -38,6 +38,8 @@ The three tools marked **Jev** need your own Jev API key (see below). Without a 
 ### How the UI is read
 
 - Windows uses UI Automation and macOS the Accessibility tree: names, roles, positions and disabled state, usually in 0.1 to 0.5 seconds.
+- Control state is read too: whether a switch is on, what a dropdown is set to and whether it is open, which item is selected, what a text field contains (password fields excluded). Controls that share a name are labelled with the group they belong to.
+- On Windows, items in a scrollable area that have not been scrolled to are listed as well; clicking one by element id, or through `find`, scrolls it into view first.
 - Windows that expose nothing (games, custom-drawn UIs) fall back to OCR automatically: RapidOCR on Windows, the built-in Vision framework on macOS.
 - Jev only receives text. It cannot judge icons or game scenes with no text; for those the agent still looks at a screenshot and clicks by coordinates.
 
