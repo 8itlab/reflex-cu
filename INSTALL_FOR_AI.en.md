@@ -170,7 +170,7 @@ Read-only first, input second.
 
 - Which mode was installed, what the registered server is called, and that a new session or an app restart is needed before the tools show up.
 - Whether Jev works; if not, which three tools are unavailable.
-- That this tool can see the screen and control the mouse and keyboard, and that `find`, `check` and `wait` send on-screen text to TypeSafe (through OpenRouter or Command Code when one of their keys is used).
+- That this tool can see the screen and control the mouse and keyboard, and that `find`, `check` and `wait` send on-screen text to TypeSafe (through OpenRouter or Command Code when one of their keys is used); with `look` they also send a screenshot of the window (TypeSafe keys only for now).
 - Any step you could not verify, stated as it is.
 
 ## Using it well afterwards
@@ -178,5 +178,6 @@ Read-only first, input second.
 - Call `status` at the start of every task.
 - Prefer `observe`, `find`, `check` and `wait` over screenshots; look at a screenshot and click by coordinates only for things without text, such as icons and game scenes.
 - For a multi-step path you already know, use a single `steps` call; it stops by itself where it is unsure. Put the window focus and the typing that follows into the same `steps` call so that no other window can take focus in between.
+- For icons and game scenes without text, try `find` with `look: true` first (available when `jev_images` in `status` is true), and only then look at a screenshot yourself.
 - When Jev reports low confidence, do not force the click; fall back to a screenshot.
 - Coordinates always refer to a screenshot taken without `zoom`.

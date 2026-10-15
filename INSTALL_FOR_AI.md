@@ -170,7 +170,7 @@ codex mcp add winbox --env CU_SSH=<别名> --env 'CU_DIR=C:\reflexcu' -- python3
 
 - 装的是哪种模式、注册的工具名叫什么、需要新开会话或重启应用才能看到工具。
 - Jev 是否可用；不可用时哪三个工具用不了。
-- 这个工具能看到屏幕并控制鼠标键盘，`find`、`check`、`wait` 会把屏幕上的文字发给 TypeSafe（用 OpenRouter 或 Command Code 的密钥时经由它们转发）。
+- 这个工具能看到屏幕并控制鼠标键盘，`find`、`check`、`wait` 会把屏幕上的文字发给 TypeSafe（用 OpenRouter 或 Command Code 的密钥时经由它们转发）；加 `look` 时还会发送窗口截图（目前只有 TypeSafe 官方密钥支持）。
 - 哪些步骤你没能验证，原样说明。
 
 ## 以后你自己怎么用好它
@@ -178,5 +178,6 @@ codex mcp add winbox --env CU_SSH=<别名> --env 'CU_DIR=C:\reflexcu' -- python3
 - 每次开始先调 `status`。
 - 能用 `observe`、`find`、`check`、`wait` 就不要截图；只有图标、游戏画面这类没有文字的内容才看截图按坐标点。
 - 路径明确的多步操作用一次 `steps` 做完，它会在没把握的地方自己停下。切窗口和随后的打字放在同一个 `steps` 里，中间就不会被别的窗口抢走焦点。
+- 图标、游戏画面这类没有文字的东西，先试 `find` 加 `look: true`（status 里 `jev_images` 为 true 时可用），不行再自己看截图。
 - Jev 给出低置信度时不要硬点，换成看截图。
 - 坐标一律以不带 `zoom` 的截图为准。

@@ -28,8 +28,8 @@ Tools, parameters and the coordinate convention are identical in all three.
 | `observe` | Read a window's UI elements and their coordinates without a screenshot; open menus are included |
 | `click` / `move` / `drag` / `scroll` | Mouse, by coordinates or by an element id from `observe` |
 | `key` / `type` | Keys and shortcuts; text input (any script), optionally through the clipboard |
-| `find` | **Jev**: describe the element in a sentence, get the best match with a confidence, optionally click it |
-| `check` | **Jev**: ask a yes/no question about the current screen |
+| `find` | **Jev**: describe the element in a sentence, get the best match with a confidence, optionally click it; with `look`, find it in the screenshot (icons, game scenes) |
+| `check` | **Jev**: ask a yes/no question about the current screen; with `look`, Jev sees the screenshot too |
 | `wait` | **Jev**: poll until a yes/no question holds or a timeout expires |
 | `steps` | Run a sequence of operations in one call; stops when Jev is unsure or a step fails |
 
@@ -41,7 +41,23 @@ The three tools marked **Jev** need your own Jev API key (see below). Without a 
 - Control state is read too: whether a switch is on, what a dropdown is set to and whether it is open, which item is selected, what a text field contains (password fields excluded). Controls that share a name are labelled with the group they belong to.
 - On Windows, items in a scrollable area that have not been scrolled to are listed as well; clicking one by element id, or through `find`, scrolls it into view first.
 - Windows that expose nothing (games, custom-drawn UIs) fall back to OCR automatically: RapidOCR on Windows, the built-in Vision framework on macOS.
-- Jev only receives text. It cannot judge icons or game scenes with no text; for those the agent still looks at a screenshot and clicks by coordinates.
+- By default Jev receives text only. For icons and game scenes with no text, pass `look: true` to `find`, `check` or `wait` and Jev looks at the screenshot itself (next section).
+
+### Looking at pixels (`look`, experimental)
+
+Jev reads images since 1.13, and 1.14 adds a question type that boxes one thing in a picture. With `look: true`:
+
+- `find` boxes the target roughly on the whole window, then again on an enlarged crop around it, and returns the centre. `confidence` is Jev's probability, after zooming in, that the target is really there; it clicks only when that is high enough.
+- `check` and `wait` give Jev the window's screenshot along with the text read from it.
+- The screenshot goes to Jev only, never into the agent's context, so the agent pays nothing to look.
+
+Measured on this machine, without clicking, against known positions: on a game screenshot, 8 of 8 targets (characters, a lantern, an archery target, banners) were hit after the two passes; on a browser toolbar, 6 of 8 small buttons were hit, one was refused for low confidence, and one landed on a tab's title instead of its close button. A `find` takes about 1–3 s, a `check` about 0.6 s.
+
+Limits:
+
+- TypeSafe labels this experimental ("Dreamer-ready"); format and accuracy may change. Tightly packed small icons can still be missed; confirm important clicks with `check`, or look at a screenshot yourself.
+- Only a TypeSafe key works for now. OpenRouter already serves Jev 1.14 but drops the image and lets the model answer blind, so through OpenRouter or Command Code `look` fails with an error instead of guessing. `jev_images` in `status` says whether the current source can see images.
+- Boxing needs Jev 1.14, so `look` uses `jev-preview` by default; once TypeSafe moves `jev-latest` to 1.14, `CU_JEV_VISION_MODEL` can point back to it.
 
 ### Coordinates
 
@@ -139,6 +155,8 @@ The read-only tools (`status`, `screenshot`, `windows`, `observe`, `check`, `wai
 | `COMMANDCODE_API_KEY` | Backend | The key for reaching Jev through Command Code; may also be stored in `~/.reflexcu/commandcode_key` |
 | `CU_JEV_PROVIDER` | Backend | `typesafe`, `openrouter` or `commandcode`; unset means the first one, in that order, that has a key. May also be stored in `~/.reflexcu/jev_provider` |
 | `CU_JEV_URL` / `CU_JEV_MODEL` | Backend | Override the endpoint and the model name, for other compatible gateways; may also be stored in `~/.reflexcu/jev_url` and `~/.reflexcu/jev_model` |
+| `CU_JEV_VISION_MODEL` | Backend | Model used for `look` (default `jev-preview`); may also be stored in `~/.reflexcu/jev_vision_model` |
+| `CU_JEV_IMAGES` | Backend | `1` sends images even through a source not confirmed to support them (for compatible gateways that do) |
 | `CU_PROXY` | Backend | Proxy for reaching Jev, e.g. `http://127.0.0.1:7890`; may also be stored in `~/.reflexcu/proxy`. System proxies are not picked up automatically |
 
 ## Command-line debugging
@@ -159,7 +177,7 @@ This tool can see the screen and control the mouse and keyboard. Treat it accord
 
 - The remote daemon listens on `127.0.0.1` only, every request must carry the token from `token.txt`, and the only way in from outside is the SSH tunnel. Do not expose the port to a network.
 - The remote daemon runs with the highest privileges so that it can operate administrator windows. Anyone who can reach that port with the token controls the machine.
-- `find`, `check` and `wait` send the text on screen to TypeSafe's Jev API (through OpenRouter or Command Code when one of their keys is used).
+- `find`, `check` and `wait` send the text on screen to TypeSafe's Jev API (through OpenRouter or Command Code when one of their keys is used). With `look`, they also send a screenshot of that window.
 - With an OpenRouter key, requests carry this project's name and repository URL (OpenRouter's app attribution headers, used for its public app rankings) and nothing about you. Set `CU_NO_ATTRIBUTION=1` to turn that off. Do not use them while sensitive content is on screen, or leave the key unconfigured.
 - Input goes to the foreground window. Focus the right window before typing, or the keystrokes land in another program. When someone is using the machine, `idle_seconds` in `status` is small.
 - Online games with kernel anti-cheat may treat synthetic input as cheating. Use your own judgment and do not use this tool in such games.
@@ -189,9 +207,11 @@ Faster on short tasks, with less than half the tool calls. On a long task with m
 
 **What is reflex-cu?** A standard stdio MCP server that gives an AI agent the tools to see the screen and use the mouse and keyboard, what is usually called computer use. It runs on your own machine and is called by the agent you already use (Claude Code, Codex, Codex inside the ChatGPT desktop app).
 
-**How is it different from a model's built-in computer use?** The usual loop sends a screenshot to a large model at every step. reflex-cu reads the controls on screen directly (names, state, coordinates) and falls back to screenshots only for content without text, such as icons or game scenes. Small decisions like "which element?" and "did that work?" go to Jev. It can also operate the real desktop of another Windows machine over SSH.
+**How is it different from a model's built-in computer use?** The usual loop sends a screenshot to a large model at every step. reflex-cu reads the controls on screen directly (names, state, coordinates) and looks at pixels only for content without text, such as icons or game scenes, and even then Jev can do the looking (`look`) so the screenshot never enters the large model's context. Small decisions like "which element?" and "did that work?" go to Jev. It can also operate the real desktop of another Windows machine over SSH.
 
 **Does it work without a Jev key?** Yes. Screenshots, reading the UI, mouse and keyboard need no key. Only `find`, `check` and `wait` do.
+
+**Can Jev see images?** Yes, since Jev 1.13, still as an experimental feature. reflex-cu 0.4 uses it to find icons and things in game scenes (`look`), with a TypeSafe key only; see "Looking at pixels" above.
 
 **Where does a Jev key come from?** TypeSafe directly, OpenRouter, or Command Code: see "Jev API key" above. On a network that cannot reach TypeSafe, an OpenRouter key is an alternative.
 

@@ -28,8 +28,8 @@
 | `observe` | 不截图，直接读出窗口里的界面元素和它们的坐标；打开着的菜单也会列出 |
 | `click` / `move` / `drag` / `scroll` | 鼠标，可以用坐标，也可以用 `observe` 返回的元素编号 |
 | `key` / `type` | 按键和组合键；输入文字（含中文），可走剪贴板 |
-| `find` | **Jev**：一句话描述要操作的元素，返回最匹配的那个和置信度，可以直接点 |
-| `check` | **Jev**：对当前屏幕问一个是非题 |
+| `find` | **Jev**：一句话描述要操作的元素，返回最匹配的那个和置信度，可以直接点；加 `look` 时看截图找（图标、游戏画面） |
+| `check` | **Jev**：对当前屏幕问一个是非题；加 `look` 时连截图一起看 |
 | `wait` | **Jev**：轮询直到是非题成立或超时 |
 | `steps` | 一次执行一串操作，Jev 没把握或某步失败就停下 |
 
@@ -41,7 +41,23 @@
 - 控件的状态会一起读出来：开关是开还是关，下拉框当前选的是什么、有没有展开，哪一项被选中，输入框里填了什么（密码框除外）。几个控件重名时标出各自属于哪个分组。
 - Windows 上，滚动区域里还没滚到的项也会列出；用元素编号点击或用 `find` 点击时会先自动滚动到它。
 - 读不到东西的窗口（游戏、自绘界面）自动改用文字识别：Windows 用 RapidOCR，Mac 用系统自带的 Vision。
-- Jev 只接收文字。纯图标、游戏画面这类没有文字的内容它判断不了，代理仍然要看截图按坐标操作。
+- 默认只把文字交给 Jev。纯图标、游戏画面这类没有文字的内容，给 `find`、`check`、`wait` 加上 `look: true`，Jev 会直接看截图（见下一节）。
+
+### 看画面（`look`，实验性）
+
+Jev 1.13 起能看图，1.14 又加了"框出某个东西"的问题类型。加上 `look: true` 后：
+
+- `find` 先在整个窗口上粗框一次，再把那一块放大重新框一次，返回中心坐标；`confidence` 是放大之后 Jev 认为它确实在那里的概率，够高才会点。
+- `check`、`wait` 把窗口截图和读出的文字一起交给 Jev 判断。
+- 截图只发给 Jev，不进代理的上下文，代理那边不花看图的钱。
+
+实测（本机，不点击，只比对位置）：一张游戏截图上的 8 个目标（人物、灯笼、箭靶、旗帜等）两轮框选 8/8 命中；浏览器工具栏上 8 个小按钮命中 6 个，其中一个低置信度没点，一个框在了同一个标签页的标题上而不是它的关闭按钮。一次 `find` 约 1~3 秒，`check` 约 0.6 秒。
+
+限制：
+
+- 这是 TypeSafe 标为实验性（"Dreamer-ready"）的功能，格式和准确度都可能变。紧挨着的小图标仍可能框错，重要的点击先用 `check` 确认，或者自己看截图。
+- 目前只有 TypeSafe 官方密钥能用。OpenRouter 已经上了 Jev 1.14，但会把图片丢掉、让模型闭着眼回答，所以通过 OpenRouter 或 Command Code 时 `look` 会直接报错，而不是瞎答。`status` 的 `jev_images` 表示当前来源能不能看图。
+- 框选需要 Jev 1.14，默认用 `jev-preview`；TypeSafe 把 `jev-latest` 切到 1.14 之后可以用 `CU_JEV_VISION_MODEL` 改回。
 
 ### 坐标
 
@@ -139,6 +155,8 @@ codex mcp add winbox --env CU_SSH=<ssh 别名> --env 'CU_DIR=C:\reflexcu' -- pyt
 | `COMMANDCODE_API_KEY` | 后端 | 通过 Command Code 用 Jev 时的密钥；也可以写在 `~/.reflexcu/commandcode_key` |
 | `CU_JEV_PROVIDER` | 后端 | `typesafe`、`openrouter` 或 `commandcode`；不设时按这个顺序用第一个配了密钥的。也可以写在 `~/.reflexcu/jev_provider` |
 | `CU_JEV_URL` / `CU_JEV_MODEL` | 后端 | 覆盖接口地址和模型名，用来接别的兼容网关；也可以写在 `~/.reflexcu/jev_url`、`~/.reflexcu/jev_model` |
+| `CU_JEV_VISION_MODEL` | 后端 | `look` 用的模型（默认 `jev-preview`）；也可以写在 `~/.reflexcu/jev_vision_model` |
+| `CU_JEV_IMAGES` | 后端 | 设成 `1` 时，即使当前来源没被确认支持图片也照样发图（给已经支持图片的兼容网关用） |
 | `CU_PROXY` | 后端 | 访问 Jev 用的代理，例如 `http://127.0.0.1:7890`；也可以写在 `~/.reflexcu/proxy`。系统代理不会被自动使用 |
 
 ## 命令行调试
@@ -159,7 +177,7 @@ CU_SHOT=shot.jpg python reflexcu/server.py screenshot
 
 - 远程服务只监听 `127.0.0.1`，每个请求都要带 `token.txt` 里的令牌，对外只走 SSH 隧道。不要把端口暴露到网络上。
 - 远程服务以最高权限运行，这样才能操作管理员窗口。能访问那个端口和令牌的人就能控制那台机器。
-- `find`、`check`、`wait` 会把屏幕上的文字发给 TypeSafe 的 Jev 接口（用 OpenRouter 或 Command Code 的密钥时经由它们转发）。
+- `find`、`check`、`wait` 会把屏幕上的文字发给 TypeSafe 的 Jev 接口（用 OpenRouter 或 Command Code 的密钥时经由它们转发）。加了 `look` 时还会发送那个窗口的截图。
 - 用 OpenRouter 的密钥时，请求会带上本项目的名称和仓库地址（OpenRouter 的应用归属标头，用于它公开的应用榜单），不含你的任何信息；设 `CU_NO_ATTRIBUTION=1` 可以关掉。屏幕上有敏感内容时不要用这三个工具，或者不配置密钥。
 - 输入是发给前台窗口的。先切对窗口再打字，否则按键会进别的程序；有人正在用那台机器时，`status` 的 `idle_seconds` 会很小。
 - 带内核反作弊的在线游戏可能把模拟输入当作外挂，请自行判断，不要在这类游戏里使用。
@@ -189,9 +207,11 @@ CU_SHOT=shot.jpg python reflexcu/server.py screenshot
 
 **reflex-cu 是什么？** 一个标准的 stdio MCP 服务，给 AI 代理提供"看屏幕、动鼠标键盘"的工具，也就是通常说的 computer use。它装在你自己的机器上，由你已经在用的代理（Claude Code、Codex、ChatGPT 桌面应用里的 Codex）来调用。
 
-**和模型自带的 computer use 有什么不同？** 常见做法是每一步截一张图交给大模型看。reflex-cu 优先直接读出界面上的控件（名称、状态、坐标），只有图标、游戏画面这类没有文字的内容才截图；"点哪个""成功了没"这类小判断交给 Jev。它还能通过 SSH 操作另一台 Windows 的真实桌面。
+**和模型自带的 computer use 有什么不同？** 常见做法是每一步截一张图交给大模型看。reflex-cu 优先直接读出界面上的控件（名称、状态、坐标），只有图标、游戏画面这类没有文字的内容才看图，而且看图找东西也可以交给 Jev（`look`），截图不必进大模型的上下文；"点哪个""成功了没"这类小判断交给 Jev。它还能通过 SSH 操作另一台 Windows 的真实桌面。
 
 **没有 Jev 密钥能用吗？** 能。截图、读界面、鼠标、键盘都不需要密钥，只有 `find`、`check`、`wait` 三个工具需要。
+
+**Jev 能看图吗？** 能，Jev 1.13 起支持图片，目前还是实验性功能。reflex-cu 0.4 起用它来找图标和游戏画面里的东西（`look`），只支持 TypeSafe 官方密钥，见上文"看画面"。
 
 **Jev 的密钥从哪来？** TypeSafe 官方、OpenRouter、Command Code 三选一，见上文"Jev 密钥"。在访问不了 TypeSafe 的网络里，可以用 OpenRouter 的密钥。
 

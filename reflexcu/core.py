@@ -4,6 +4,7 @@ A backend (win.py / mac.py) supplies pixels, windows, the UI tree, OCR and input
 works in the backend's "view" coordinate space and never touches the OS directly.
 """
 import base64
+import io
 import os
 import sys
 import time
@@ -11,12 +12,15 @@ from pathlib import Path
 
 import httpx
 
-VERSION = '0.3.5'
+VERSION = '0.4.0'
 # Where Jev can be reached. All of these speak the same System One protocol (state + typed questions
 # in, probabilities out); only the address, the key and the name of the model differ.
 PROVIDERS = {
     'typesafe': {'url': os.environ.get('TYPESAFE_API_URL', 'https://api.typesafe.ai/v1/systemone'),
-                 'model': os.environ.get('TYPESAFE_MODEL', 'jev-latest'), 'env': 'TYPESAFE_API_KEY', 'file': 'typesafe_key'},
+                 'model': os.environ.get('TYPESAFE_MODEL', 'jev-latest'), 'env': 'TYPESAFE_API_KEY', 'file': 'typesafe_key',
+                 # Image input is experimental at TypeSafe; the box question needs Jev 1.14, which is jev-preview
+                 # until jev-latest moves to it.
+                 'images': True, 'vision_model': os.environ.get('TYPESAFE_VISION_MODEL', 'jev-preview')},
     # The extra headers are OpenRouter's app attribution: they name this project, nothing about the user.
     'openrouter': {'url': 'https://openrouter.ai/api/v1/systemone', 'model': '~typesafe/jev-latest',
                    'env': 'OPENROUTER_API_KEY', 'file': 'openrouter_key',
@@ -145,7 +149,15 @@ def jev_provider():
     return None, ''
 
 
-def jev(state, questions):
+def jpeg64(img):
+    buf = io.BytesIO()
+    img.save(buf, 'JPEG', quality=85)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def jev(state, questions, images=None):
+    """images: {reference: PIL image}. Jev sees the picture wherever the reference string appears in
+    `state` or in a question's instructions."""
     name, key = jev_provider()
     if not key:
         raise RuntimeError('no Jev key: bring your own, from any one of ' + '; '.join(
@@ -153,8 +165,17 @@ def jev(state, questions):
     p = PROVIDERS[name]
     # CU_JEV_URL / CU_JEV_MODEL point the chosen key at any other gateway that speaks the same protocol
     extra = {} if os.environ.get('CU_NO_ATTRIBUTION') else p.get('headers', {})
-    r = _http.post(setting('CU_JEV_URL', 'jev_url') or p['url'], headers={'Authorization': 'Bearer ' + key, **extra},
-                   json={'model': setting('CU_JEV_MODEL', 'jev_model') or p['model'], 'state': state, 'questions': questions})
+    headers = {'Authorization': 'Bearer ' + key, **extra}
+    body = {'model': setting('CU_JEV_MODEL', 'jev_model') or p['model'], 'state': state, 'questions': questions}
+    if images:
+        # a gateway that drops the pictures still answers, blind; better to refuse than to guess
+        if not (p.get('images') or setting('CU_JEV_IMAGES', 'jev_images')):
+            raise RuntimeError(f"look=true needs Jev's image input, which {name} does not pass on yet; "
+                               "use a TypeSafe key for it, or leave look off")
+        body['model'] = setting('CU_JEV_VISION_MODEL', 'jev_vision_model') or p.get('vision_model') or body['model']
+        body['assets'] = {ref: {'type': 'image', 'format': 'jpg', 'data_base64': jpeg64(img)} for ref, img in images.items()}
+        headers['TypeSafe-Danger-Zone-Images'] = 'true'
+    r = _http.post(setting('CU_JEV_URL', 'jev_url') or p['url'], headers=headers, json=body, timeout=20 if images else 8)
     if r.status_code == 451:
         raise RuntimeError(f"the Jev API at {name} refuses requests from this network (HTTP 451); put a proxy URL in CU_PROXY "
                            f"or in the file {CONF / 'proxy'}" + (', or reach Jev through another provider (OpenRouter, Command Code)' if name == 'typesafe' else ''))
@@ -244,12 +265,81 @@ def jev_pick(goal, els, context=''):
     return ranked[0][1], ranked[0][0], ranked
 
 
-def jev_check(question, window=None, source='auto'):
+def jev_check(question, window=None, source='auto', look=False):
     info, els = observe(window, source)
     state = {'window': info.get('title', ''), 'app': info.get('exe', ''), 'screen': screen_text(els)}
-    p = jev(state, {'q': {'type': 'noul', 'instructions':
-                          f'`screen` 是当前屏幕上按阅读顺序列出的界面文字。根据它判断：{question}'}})['q'].get('noul', 0.0)
+    about = '`screen` 是当前屏幕上按阅读顺序列出的界面文字。根据它判断'
+    pics = None
+    if look:
+        ref = shot_ref()
+        pics = {ref: fit(B.grab(clip(info['rect']))[0])[0]}
+        state['shot'] = ref
+        about = '`shot` 是当前窗口的截图，`screen` 是从界面读出的文字（可能不全）。根据它们判断'
+    p = jev(state, {'q': {'type': 'noul', 'instructions': f'{about}：{question}'}}, pics)['q'].get('noul', 0.0)
     return round(p, 3), info, els
+
+
+# ---- looking at pixels (Jev image input) ----
+
+def shot_ref():
+    return f'[screenshot {os.urandom(4).hex()}]'
+
+
+def fit(img, long=1568, grow=False):
+    """Jev takes 256 to 1568 pixels a side. Scale so the long side is at most `long` (exactly `long`
+    with grow=True), then pad a too-thin picture at its right/bottom. Returns the picture and the share
+    of its width and height the screenshot itself takes up, to turn Jev's fractions back."""
+    from PIL import Image
+    w, h = img.size
+    k = long / max(w, h)
+    if k < 1 or grow:
+        w, h = max(1, round(w * k)), max(1, round(h * k))
+        img = img.resize((w, h), Image.LANCZOS)
+    W, H = max(w, 256), max(h, 256)
+    if (W, H) != (w, h):
+        pad = Image.new('RGB', (W, H))
+        pad.paste(img, (0, 0))
+        img = pad
+    return img, w / W, h / H
+
+
+def boxed(answer, area, fx, fy):
+    """A box answer (fractions of the picture) as a rectangle in view coordinates."""
+    b = answer['box']
+    w, h = area[2] - area[0], area[3] - area[1]
+    return [round(area[0] + b['left'] / fx * w), round(area[1] + b['top'] / fy * h),
+            round(area[0] + b['right'] / fx * w), round(area[1] + b['bottom'] / fy * h)]
+
+
+def look_once(goal, area, zoom=False):
+    img = B.grab(area, zoom=zoom)[0]
+    pic, fx, fy = fit(img, 1280, grow=True) if zoom else fit(img)
+    ref = shot_ref()
+    a = jev({'shot': ref}, {'there': {'type': 'noul', 'instructions': f'`shot` 是屏幕截图。图里能不能看到：{goal}'},
+                            'where': {'type': 'box', 'instructions': f'`shot` 里的：{goal}'}}, {ref: pic})
+    return a['there'].get('noul', 0.0), boxed(a['where'], area, fx, fy), a['where'].get('confidence', 0.0)
+
+
+def jev_locate(goal, window=None, region=None):
+    """Find something by how it looks (an icon, something in a game): a rough box on the whole window,
+    then a second look at an enlarged crop around it. Jev's box comes in hundredths of the picture,
+    about 16 pixels on a full screen, which is too coarse for a small icon on its own; on the second
+    look it is a few pixels. The second "is it there?" is the one to trust: when the first box landed
+    on the wrong thing, the crop no longer shows the target."""
+    info = B.find_window(window) if not region else {}
+    area = clip(region or info['rect'])
+    seen, rough, _ = look_once(goal, area)
+    out = {'info': info, 'area': area, 'rough': rough, 'seen': round(seen, 3)}
+    if seen < 0.3:
+        return dict(out, present=round(seen, 3), rect=None)
+    bw, bh = rough[2] - rough[0], rough[3] - rough[1]
+    cw = min(area[2] - area[0], max(3 * bw, 360))
+    ch = min(area[3] - area[1], max(3 * bh, 200, cw // 2))
+    cx = min(max((rough[0] + rough[2]) // 2, area[0] + cw // 2), area[2] - cw // 2)
+    cy = min(max((rough[1] + rough[3]) // 2, area[1] + ch // 2), area[3] - ch // 2)
+    crop = [cx - cw // 2, cy - ch // 2, cx + cw - cw // 2, cy + ch - ch // 2]
+    present, rect, conf = look_once(goal, crop, zoom=True)
+    return dict(out, present=round(present, 3), rect=rect, box_confidence=round(conf, 3), crop=crop)
 
 
 # ---- operations ----
@@ -259,7 +349,8 @@ def jev_status():
         name, key = jev_provider()
     except RuntimeError as e:
         return {'jev': False, 'jev_error': str(e)}
-    return {'jev': bool(key), 'jev_provider': name} if key else {'jev': False}
+    return {'jev': bool(key), 'jev_provider': name,
+            'jev_images': bool(PROVIDERS[name].get('images') or setting('CU_JEV_IMAGES', 'jev_images'))} if key else {'jev': False}
 
 
 def op_status(a):
@@ -346,28 +437,45 @@ def op_type(a):
     return {'typed': len(a['text'])}
 
 
+def press(out, el, conf, a):
+    """Click the match when the judge is sure enough; otherwise say why not."""
+    need = float(a.get('min_confidence', 0.75))
+    if conf >= need and not el.get('disabled'):
+        x, y = center(shown(el))
+        B.click(x, y, a.get('button', 'left'), int(a.get('count', 1)))
+        out['clicked'] = [x, y]
+    else:
+        out['clicked'] = None
+        out['why'] = '元素被禁用' if el.get('disabled') else f'置信度 {conf} 低于 {need}，没有点击'
+
+
 def op_find(a):
+    if a.get('look'):
+        t = time.time()
+        hit = jev_locate(a['goal'], a.get('window'), a.get('region'))
+        el = {'rect': hit['rect']}
+        out = {'window': name_of(hit['info']), 'looked': True, 'confidence': hit['present'], 'jev_ms': int((time.time() - t) * 1000),
+               'match': {'label': a['goal'], 'x': center(el)[0], 'y': center(el)[1], 'rect': hit['rect']} if hit['rect'] else None}
+        if a.get('click'):
+            if hit['rect']:
+                press(out, el, hit['present'], a)
+            else:
+                out.update(clicked=None, why=f"画面里看不到它（{hit['present']}）")
+        return out
     info, els = observe(a.get('window'), a.get('source', 'auto'), a.get('region'))
     t = time.time()
     el, conf, ranked = jev_pick(a['goal'], els, name_of(info))
     out = {'window': name_of(info), 'elements': len(els), 'confidence': conf, 'jev_ms': int((time.time() - t) * 1000),
            'match': brief(el) if el else None,
            'alternatives': [dict(brief(e), confidence=p) for p, e in ranked[1:]]}
-    need = float(a.get('min_confidence', 0.75))
     if a.get('click') and el:
-        if conf >= need and not el.get('disabled'):
-            x, y = center(shown(el))
-            B.click(x, y, a.get('button', 'left'), int(a.get('count', 1)))
-            out['clicked'] = [x, y]
-        else:
-            out['clicked'] = None
-            out['why'] = '元素被禁用' if el.get('disabled') else f'置信度 {conf} 低于 {need}，没有点击'
+        press(out, el, conf, a)
     return out
 
 
 def op_check(a):
     t = time.time()
-    p, info, els = jev_check(a['question'], a.get('window'), a.get('source', 'auto'))
+    p, info, els = jev_check(a['question'], a.get('window'), a.get('source', 'auto'), bool(a.get('look')))
     return {'probability': p, 'yes': p >= float(a.get('threshold', 0.7)), 'window': name_of(info),
             'elements': len(els), 'ms': int((time.time() - t) * 1000)}
 
@@ -379,7 +487,7 @@ def op_wait(a):
     polls, p, info = 0, 0.0, {}
     while True:
         try:
-            p, info, _ = jev_check(a['question'], a.get('window'), a.get('source', 'auto'))
+            p, info, _ = jev_check(a['question'], a.get('window'), a.get('source', 'auto'), bool(a.get('look')))
         except ValueError:  # the window being waited for does not exist yet
             p = 0.0
         polls += 1

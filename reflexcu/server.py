@@ -107,6 +107,8 @@ XY = {'x': {'type': 'integer'}, 'y': {'type': 'integer'},
 WIN = {'window': {'type': 'string', 'description': '窗口标题或应用名的一部分，或 windows 返回的 hwnd；不填就是前台窗口'}}
 SRC = {'source': {'type': 'string', 'enum': ['auto', 'tree', 'ocr', 'both'],
                   'description': 'auto：先读界面树，读不到（游戏、自绘界面）再用文字识别'}}
+LOOK = {'look': {'type': 'boolean', 'description': '让 Jev 直接看截图，而不只是读文字：图标、游戏画面、图片、颜色这类没有文字的内容用它。'
+                 '截图只发给 Jev，不进你的上下文。目前只有 TypeSafe 官方密钥支持（status 里 jev_images=true），每次多 1~3 秒'}}
 
 TOOLS = {
     'status': ('机器状态：分辨率、坐标系、前台窗口、用户多久没动鼠标键盘（idle_seconds）。操作前先看 idle_seconds，'
@@ -134,16 +136,18 @@ TOOLS = {
     'type': ('输入文字（支持中文）。paste=true 走剪贴板粘贴；enter=true 输完按回车。',
              {'text': {'type': 'string'}, 'paste': {'type': 'boolean'}, 'enter': {'type': 'boolean'}}, ['text']),
     'find': ('【Jev】用一句话描述要操作的东西，Jev 在界面元素里选出对应的那个并给出置信度。click=true 时置信度够就直接点。'
-             '约 0.3 秒，不需要截图。只认得有文字或有名称的元素，纯图标和游戏画面要用 screenshot 自己看。',
+             '约 0.3 秒，不需要截图。默认只认得有文字或有名称的元素；纯图标、游戏画面里的东西加 look=true，'
+             'Jev 会看截图框出它（先整窗粗框、再放大局部细框，约 2~5 秒），confidence 是放大后它确实在那里的概率。还不行再用 screenshot 自己看。',
              {'goal': {'type': 'string', 'description': '例如 "保存按钮"、"把语言改成中文的那个下拉框"'},
               'click': {'type': 'boolean'}, 'min_confidence': {'type': 'number', 'description': '默认 0.75'},
-              'button': {'type': 'string'}, 'count': {'type': 'integer'}, **WIN, **SRC}, ['goal']),
-    'check': ('【Jev】对当前屏幕上的文字问一个是非题，返回概率。用来确认上一步有没有成功。',
+              'button': {'type': 'string'}, 'count': {'type': 'integer'}, **WIN, **SRC, **LOOK,
+              'region': {'type': 'array', 'items': {'type': 'integer'}, 'description': 'look=true 时只在这块区域里找'}}, ['goal']),
+    'check': ('【Jev】对当前屏幕上的文字问一个是非题，返回概率。用来确认上一步有没有成功。问的是画面本身（游戏里、图片里、颜色）时加 look=true。',
               {'question': {'type': 'string', 'description': '例如 "保存对话框是否已经打开？"'},
-               'threshold': {'type': 'number'}, **WIN, **SRC}, ['question']),
+               'threshold': {'type': 'number'}, **WIN, **SRC, **LOOK}, ['question']),
     'wait': ('【Jev】反复看屏幕，直到是非题成立或超时（默认 10 秒，最长 120 秒）。等加载、等弹窗时用，不用一遍遍截图。',
              {'question': {'type': 'string'}, 'timeout': {'type': 'number'}, 'interval': {'type': 'number'},
-              'threshold': {'type': 'number'}, **WIN, **SRC}, ['question']),
+              'threshold': {'type': 'number'}, **WIN, **SRC, **LOOK}, ['question']),
     'steps': ('一次执行一串操作，中途不回来问。每步是 {"op": 上面任一工具名（screenshot 除外）, ...该工具的参数}，'
               '例如 [{"op":"find","goal":"个性化","click":true},{"op":"wait","question":"是否出现了颜色这一项？"},'
               '{"op":"find","goal":"颜色","click":true},{"op":"observe","filter":"模式"}]。'
@@ -207,7 +211,7 @@ def handle(msg):
     if m == 'initialize':
         return {'jsonrpc': '2.0', 'id': i, 'result': {
             'protocolVersion': msg['params'].get('protocolVersion', '2024-11-05'),
-            'capabilities': {'tools': {}}, 'serverInfo': {'name': 'reflexcu', 'version': '0.3.5'},
+            'capabilities': {'tools': {}}, 'serverInfo': {'name': 'reflexcu', 'version': '0.4.0'},
             'instructions': WHERE + HOWTO}}
     if m == 'tools/list':
         return {'jsonrpc': '2.0', 'id': i, 'result': {'tools': tool_list()}}

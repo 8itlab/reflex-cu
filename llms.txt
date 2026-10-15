@@ -2,7 +2,7 @@
 
 > Open-source computer use MCP server for Claude Code, Codex and other AI agents. It controls macOS and Windows desktops, and a remote Windows machine over SSH, by reading the accessibility / UI Automation tree instead of taking a screenshot at every step. Jev (TypeSafe's System One decision model) answers the small decisions between steps: which element, did it work, has it loaded. MIT licensed, Python 3.10+.
 
-Tools: status, screenshot, windows, focus, observe, click, move, drag, scroll, key, type, find, check, wait, steps. The three Jev tools (find, check, wait) need the user's own key from TypeSafe, OpenRouter or Command Code; everything else works without one.
+Tools: status, screenshot, windows, focus, observe, click, move, drag, scroll, key, type, find, check, wait, steps. The three Jev tools (find, check, wait) need the user's own key from TypeSafe, OpenRouter or Command Code; everything else works without one. Since 0.4, `look: true` lets Jev look at the screenshot itself (Jev 1.13+ image input, 1.14 box questions) to find icons and things in game scenes, with a TypeSafe key.
 
 ## Docs
 
