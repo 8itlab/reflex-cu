@@ -1,10 +1,12 @@
 # reflex-cu
 
-> **reflex-cu** is an open-source **computer use** MCP server for Claude Code, Codex and other AI agents. It controls macOS and Windows desktops, including a remote Windows machine over SSH, by reading the accessibility / UI Automation tree instead of taking a screenshot at every step, and uses **Jev** (TypeSafe's System One decision model; a TypeSafe, OpenRouter or Command Code key works) as a fast judge. → [English README](README.en.md)
+> **reflex-cu** is an open-source **computer use** MCP server for Claude Code, Codex and other AI agents. It controls macOS and Windows desktops, including a remote Windows machine over SSH, by reading the accessibility / UI Automation tree instead of taking a screenshot at every step, and uses **Jev** (TypeSafe's System One decision model; a TypeSafe, OpenRouter or Command Code key works) as a fast judge. Since 0.4, Jev can also look at the screen itself (`look`: Jev 1.14 image input and boxes) to find icons and things in game scenes. → [English README](README.en.md)
 
 给编码代理（Claude Code、Codex 等）用的桌面操作（computer use）MCP 服务：让 AI 自己操作 Mac 和 Windows 的桌面，也能通过 SSH 操作另一台 Windows。
 
 名字里的 reflex 是"反射"：除了常规的截图、点击、打字，它把"点哪个""成功了没""加载完没"这类不需要思考的高频小判断，交给一个反射式的快速判断模型去做，代理不用每一步都看截图。目前接的判断模型是 [Jev](https://typesafe.ai)（TypeSafe 的 System One 模型，一次约 0.3 秒）。
+
+> **0.4 新功能：Jev 能看画面了。** 给 `find`、`check`、`wait` 加上 `look: true`，Jev 直接看截图：能找到纯图标、游戏画面里的人物和物件，也能回答"画面里有没有某样东西"。截图只发给 Jev，不进代理的上下文。目前是实验性功能，只支持 TypeSafe 官方密钥，详见下文[看画面](#看画面look实验性)。
 
 [English](README.en.md)
 
@@ -53,6 +55,8 @@ Jev 1.13 起能看图，1.14 又加了"框出某个东西"的问题类型。加�
 
 实测（本机，不点击，只比对位置）：一张游戏截图上的 8 个目标（人物、灯笼、箭靶、旗帜等）两轮框选 8/8 命中；浏览器工具栏上 8 个小按钮命中 6 个，其中一个低置信度没点，一个框在了同一个标签页的标题上而不是它的关闭按钮。一次 `find` 约 1~3 秒，`check` 约 0.6 秒。
 
+在一台 4K 显示器的全屏游戏（黑神话：悟空）上问"画面里有人物吗？"：只读文字时 Jev 只拿到 1 个识别出的元素，答 0.06（错）；加 `look` 后答 0.98。
+
 限制：
 
 - 这是 TypeSafe 标为实验性（"Dreamer-ready"）的功能，格式和准确度都可能变。紧挨着的小图标仍可能框错，重要的点击先用 `check` 确认，或者自己看截图。
@@ -75,11 +79,11 @@ Jev 1.13 起能看图，1.14 又加了"框出某个东西"的问题类型。加�
 
 密钥有三种来源，任选其一：
 
-| 来源 | 环境变量 | 或者写进文件 |
-|---|---|---|
-| [TypeSafe](https://typesafe.ai) 官方 | `TYPESAFE_API_KEY` | `~/.reflexcu/typesafe_key` |
-| [OpenRouter](https://openrouter.ai/typesafe/jev-1.13)（不需要 TypeSafe 账号） | `OPENROUTER_API_KEY` | `~/.reflexcu/openrouter_key` |
-| [Command Code](https://commandcode.ai) 的 Provider API | `COMMANDCODE_API_KEY` | `~/.reflexcu/commandcode_key` |
+| 来源 | 环境变量 | 或者写进文件 | 看画面（`look`） |
+|---|---|---|---|
+| [TypeSafe](https://typesafe.ai) 官方 | `TYPESAFE_API_KEY` | `~/.reflexcu/typesafe_key` | 支持 |
+| [OpenRouter](https://openrouter.ai/typesafe/jev-1.13)（不需要 TypeSafe 账号） | `OPENROUTER_API_KEY` | `~/.reflexcu/openrouter_key` | 暂不支持（图片会被丢掉） |
+| [Command Code](https://commandcode.ai) 的 Provider API | `COMMANDCODE_API_KEY` | `~/.reflexcu/commandcode_key` | 未验证，默认不发图 |
 
 密钥放在**被操作的那台机器**上，文件里只写密钥本身（Windows 上 `~` 是 `%USERPROFILE%`）。配了不止一种时按表里的顺序取第一个；要指定就把 `CU_JEV_PROVIDER`（或文件 `~/.reflexcu/jev_provider`）设成 `typesafe`、`openrouter` 或 `commandcode`。`status` 的 `jev_provider` 会显示当前用的是哪一个。
 
@@ -166,6 +170,8 @@ codex mcp add winbox --env CU_SSH=<ssh 别名> --env 'CU_DIR=C:\reflexcu' -- pyt
 ```
 python reflexcu/server.py status
 python reflexcu/server.py find '{"goal":"保存按钮"}'
+python reflexcu/server.py find '{"goal":"右上角的齿轮图标","look":true}'
+python reflexcu/server.py check '{"question":"画面里有没有弹出的对话框？","look":true}'
 CU_SHOT=shot.jpg python reflexcu/server.py screenshot
 ```
 
@@ -185,6 +191,7 @@ CU_SHOT=shot.jpg python reflexcu/server.py screenshot
 ## 已知限制
 
 - 只操作主显示器。
+- `look` 是实验性功能：紧挨着的小图标可能框错，Jev 偶尔对框错的位置也给出高置信度；重要的点击先确认。分辨率很高的窗口更慢：4K 全屏游戏上一次看图判断约 8 秒，其中文字识别约 4 秒；游戏里只想看画面时加 `source: "tree"` 跳过文字识别，约 4 秒。
 - `key` 发的字符键会经过输入法；输入文字用 `type`。`key` 的长按只是保持按下，不会连发字符。
 - Mac 上打开的菜单靠文字识别读取，没有禁用状态；Windows 上经典菜单和归属于该窗口的弹出层走 UI Automation。
 - 远程模式目前只有 Windows 的安装脚本。Mac 后端也能跑 `daemon.py`，但没有测过。

@@ -6,6 +6,8 @@
 
 The "reflex" in the name is the idea: besides the usual screenshots, clicks and typing, the small, frequent decisions that need no deliberation ("which element?", "did that work?", "has it finished loading?") go to a fast, reflex-like judge model, so the agent no longer has to look at a screenshot after every step. The judge currently wired in is [Jev](https://typesafe.ai), TypeSafe's System One model, which answers in about 0.3 seconds.
 
+> **New in 0.4: Jev can look.** Pass `look: true` to `find`, `check` or `wait` and Jev looks at the screenshot itself: it finds bare icons and characters or objects in game scenes, and answers "is there a … on screen?". The screenshot goes to Jev only, never into the agent's context. Experimental, TypeSafe keys only; see [Looking at pixels](#looking-at-pixels-look-experimental).
+
 Tool descriptions and element labels are currently in Chinese.
 
 ## Three ways to use it
@@ -53,6 +55,8 @@ Jev reads images since 1.13, and 1.14 adds a question type that boxes one thing 
 
 Measured on this machine, without clicking, against known positions: on a game screenshot, 8 of 8 targets (characters, a lantern, an archery target, banners) were hit after the two passes; on a browser toolbar, 6 of 8 small buttons were hit, one was refused for low confidence, and one landed on a tab's title instead of its close button. A `find` takes about 1–3 s, a `check` about 0.6 s.
 
+Asked "is there a character on screen?" in a full-screen game on a 4K display (Black Myth: Wukong), Jev answered 0.06 (wrong) from text alone, which was one recognised element, and 0.98 with `look`.
+
 Limits:
 
 - TypeSafe labels this experimental ("Dreamer-ready"); format and accuracy may change. Tightly packed small icons can still be missed; confirm important clicks with `check`, or look at a screenshot yourself.
@@ -75,11 +79,11 @@ This project does not ship with, or proxy, any Jev quota. `find`, `check` and `w
 
 The key can come from any one of three places:
 
-| Source | Environment variable | Or a file |
-|---|---|---|
-| [TypeSafe](https://typesafe.ai) directly | `TYPESAFE_API_KEY` | `~/.reflexcu/typesafe_key` |
-| [OpenRouter](https://openrouter.ai/typesafe/jev-1.13) (no TypeSafe account needed) | `OPENROUTER_API_KEY` | `~/.reflexcu/openrouter_key` |
-| [Command Code](https://commandcode.ai)'s Provider API | `COMMANDCODE_API_KEY` | `~/.reflexcu/commandcode_key` |
+| Source | Environment variable | Or a file | Looking (`look`) |
+|---|---|---|---|
+| [TypeSafe](https://typesafe.ai) directly | `TYPESAFE_API_KEY` | `~/.reflexcu/typesafe_key` | Yes |
+| [OpenRouter](https://openrouter.ai/typesafe/jev-1.13) (no TypeSafe account needed) | `OPENROUTER_API_KEY` | `~/.reflexcu/openrouter_key` | Not yet (images are dropped) |
+| [Command Code](https://commandcode.ai)'s Provider API | `COMMANDCODE_API_KEY` | `~/.reflexcu/commandcode_key` | Unverified; images not sent by default |
 
 The key lives on **the machine being controlled**; the file contains only the key (`~` is `%USERPROFILE%` on Windows). With more than one configured, the first in the table's order is used; to choose, set `CU_JEV_PROVIDER` (or the file `~/.reflexcu/jev_provider`) to `typesafe`, `openrouter` or `commandcode`. `jev_provider` in `status` shows which one is active.
 
@@ -166,6 +170,8 @@ With arguments, `server.py` runs one tool and prints the result:
 ```
 python reflexcu/server.py status
 python reflexcu/server.py find '{"goal":"the Save button"}'
+python reflexcu/server.py find '{"goal":"the gear icon at the top right","look":true}'
+python reflexcu/server.py check '{"question":"Is a dialog open?","look":true}'
 CU_SHOT=shot.jpg python reflexcu/server.py screenshot
 ```
 
@@ -185,6 +191,7 @@ This tool can see the screen and control the mouse and keyboard. Treat it accord
 ## Known limitations
 
 - Only the main display is controlled.
+- `look` is experimental: tightly packed small icons can be missed, and Jev is occasionally confident about a wrong spot; confirm important clicks. Very large windows are slower: on a full-screen 4K game one judgment with `look` takes about 8 s, about 4 s of it text recognition; when only the picture matters, `source: "tree"` skips recognition and it takes about 4 s.
 - Character keys sent with `key` go through the input method; use `type` for text. Holding a key with `key` keeps it down but does not auto-repeat characters.
 - On macOS, open menus are read by OCR and carry no disabled state. On Windows, classic menus and popups owned by the window are read through UI Automation.
 - Remote mode has an install script for Windows only. The macOS backend can run `daemon.py` too, but that is untested.
